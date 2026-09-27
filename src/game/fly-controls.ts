@@ -1,4 +1,5 @@
 import type { PerspectiveCamera } from 'three';
+import { clamp1, flyDelta } from './touch-math';
 
 export interface Pose {
   position: [number, number, number];
@@ -23,6 +24,8 @@ export class FlyControls {
   onLockFailed?: () => void;
 
   private readonly keys = new Set<string>();
+  /** Analog input from touch controls, each -1..1. */
+  private analog = { forward: 0, strafe: 0, up: 0 };
   /** A lock request is pending on a browser whose requestPointerLock returns no promise. */
   private legacyLockPending = false;
   private readonly onKeyDown = (e: KeyboardEvent) => {
@@ -102,11 +105,31 @@ export class FlyControls {
 
   /** Rotate the view by raw mouse deltas (also used by tests). */
   look(dx: number, dy: number): void {
-    this.yaw -= dx * this.sensitivity;
-    this.pitch -= dy * this.sensitivity;
+    this.rotate(-dx * this.sensitivity, -dy * this.sensitivity);
+  }
+
+  /** Turns the view by angles in radians; pitch is clamped just short of straight up or down. */
+  rotate(dYaw: number, dPitch: number): void {
+    this.yaw += dYaw;
+    this.pitch += dPitch;
     const lim = Math.PI / 2 - 0.01;
     this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
     this.apply();
+  }
+
+  /** Analog movement from a thumbstick: forward and strafe in -1..1. */
+  setAnalogMove(forward: number, strafe: number): void {
+    this.analog.forward = clamp1(forward);
+    this.analog.strafe = clamp1(strafe);
+  }
+
+  /** Analog vertical movement: 1 rises, -1 sinks. */
+  setAnalogVertical(up: number): void {
+    this.analog.up = clamp1(up);
+  }
+
+  clearAnalog(): void {
+    this.analog = { forward: 0, strafe: 0, up: 0 };
   }
 
   isKeyDown(code: string): boolean {
@@ -129,16 +152,17 @@ export class FlyControls {
     if (k.has('KeyA') || k.has('ArrowLeft')) strafe -= 1;
     if (k.has('Space')) up += 1;
     if (k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyC')) up -= 1;
-    if (fwd === 0 && strafe === 0 && up === 0) return;
-    const boost = k.has('ControlLeft') || k.has('ControlRight') ? 2.5 : 1;
-    const len = Math.hypot(fwd, strafe, up) || 1;
-    const s = (this.speed * boost * dt) / len;
-    const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
-    // Camera looks down -Z when yaw = 0; forward on the ground plane is (-sin, 0, -cos).
+    const a = this.analog;
+    const input = { forward: clamp1(fwd + a.forward), strafe: clamp1(strafe + a.strafe), up: clamp1(up + a.up) };
+    if (input.forward === 0 && input.strafe === 0 && input.up === 0) return;
+    // Ctrl sprints on a keyboard; pushing the thumbstick all the way out sprints on touch.
+    const stickSprint = Math.hypot(a.forward, a.strafe) >= 0.95;
+    const boost = k.has('ControlLeft') || k.has('ControlRight') ? 2.5 : stickSprint ? 2 : 1;
+    const d = flyDelta(input, this.yaw, this.speed * boost, dt);
     const p = this.camera.position;
-    p.x += (-sin * fwd + cos * strafe) * s;
-    p.z += (-cos * fwd - sin * strafe) * s;
-    p.y += up * s;
+    p.x += d.x;
+    p.y += d.y;
+    p.z += d.z;
   }
 
   getPose(): Pose {

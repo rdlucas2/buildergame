@@ -6,6 +6,13 @@ export interface HudButtons {
   onWorld: () => void;
   onHelp: () => void;
   onStructure: () => void;
+  /** A hotbar slot was clicked or tapped. */
+  onSlot: (index: number) => void;
+}
+
+/** Button text with its keyboard shortcut in a span that touch mode hides. */
+function labelWithKey(text: string, key: string): Node[] {
+  return [document.createTextNode(text), el('span', { class: 'key-hint' }, ` (${key})`)];
 }
 
 /** Always-visible overlay: crosshair, mode + status text, hotbar, hint line and the top buttons. */
@@ -17,9 +24,11 @@ export class Hud {
   private readonly hotbarEl = el('div', { class: 'hotbar', id: 'hotbar' });
   private readonly startEl = el('div', { class: 'start-overlay', id: 'start-overlay' }, el('div', { class: 'start-card' }, el('h1', {}, 'Buildergame'), el('p', {}, 'Click to take control. Move with WASD, fly with Space / Shift, look with the mouse.'), el('p', {}, 'Press Tab to open the library and place an example, or B to build your own.'), el('p', { class: 'muted' }, 'Press H any time for the full list of controls.')));
   readonly structureBtn: HTMLButtonElement;
+  private readonly onSlot: (index: number) => void;
 
   constructor(buttons: HudButtons) {
-    this.structureBtn = el('button', { class: 'btn top-btn', id: 'btn-structure', onclick: buttons.onStructure }, 'Build structure (B)');
+    this.onSlot = buttons.onSlot;
+    this.structureBtn = el('button', { class: 'btn top-btn', id: 'btn-structure', onclick: buttons.onStructure }, ...labelWithKey('Build structure', 'B'));
     this.root = el(
       'div',
       { class: 'hud' },
@@ -29,13 +38,17 @@ export class Hud {
         'div',
         { class: 'hud-topright' },
         this.structureBtn,
-        el('button', { class: 'btn top-btn', id: 'btn-library', onclick: buttons.onLibrary }, 'Library (Tab)'),
-        el('button', { class: 'btn top-btn', id: 'btn-world', onclick: buttons.onWorld }, 'World (M)'),
-        el('button', { class: 'btn top-btn', id: 'btn-help', onclick: buttons.onHelp }, 'Help (H)'),
+        el('button', { class: 'btn top-btn', id: 'btn-library', onclick: buttons.onLibrary }, ...labelWithKey('Library', 'Tab')),
+        el('button', { class: 'btn top-btn', id: 'btn-world', onclick: buttons.onWorld }, ...labelWithKey('World', 'M')),
+        el('button', { class: 'btn top-btn', id: 'btn-help', onclick: buttons.onHelp }, ...labelWithKey('Help', 'H')),
       ),
       el('div', { class: 'hud-bottom' }, this.hintEl, this.hotbarEl),
       this.startEl,
     );
+  }
+
+  setStructureButton(text: string, key: string): void {
+    this.structureBtn.replaceChildren(...labelWithKey(text, key));
   }
 
   setMode(text: string): void {
@@ -66,7 +79,7 @@ export class Hud {
       this.hotbarEl.append(
         el(
           'div',
-          { class: `slot${i === selected ? ' selected' : ''}`, title: m?.name ?? id, dataset: { slot: String(i) } },
+          { class: `slot${i === selected ? ' selected' : ''}`, title: m?.name ?? id, dataset: { slot: String(i) }, onclick: () => this.onSlot(i) },
           el('div', { class: `swatch${m?.transparent ? ' glass' : ''}`, style: { background: m?.color ?? '#f0f' } }),
           el('span', { class: 'slot-key' }, String(i + 1)),
           el('span', { class: 'slot-name' }, m?.name ?? id),
