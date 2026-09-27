@@ -5,7 +5,6 @@ import type { Size3 } from '../core/voxel-grid';
 import { meshDataToGeometry } from './geometry';
 import { greedyMesh } from './greedy-mesh';
 import { meshPaletteFromEntries } from './mesh-palette';
-import type { VoxelMaterials } from './voxel-materials';
 
 export interface StructureGeometry {
   opaque: BufferGeometry | null;
