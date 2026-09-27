@@ -13,6 +13,16 @@ to every material, and share what you make as files that anyone can drop into th
 
 Everything is saved in the browser (IndexedDB) as you go. See `docs/FILE_FORMATS.md` for the formats.
 
+## Play online
+
+The game is a static site with no server, hosted on GitHub Pages at
+**https://rdlucas2.github.io/buildergame/**.
+
+- Every push to the default branch rebuilds and redeploys it (`.github/workflows/deploy-pages.yml`).
+- One-time setup: in the repository go to Settings → Pages → Build and deployment and set
+  Source to **GitHub Actions**.
+- Each player's worlds and structures are saved in their own browser. Export files to move or share them.
+
 ## Controls
 
 | Key | Action |
