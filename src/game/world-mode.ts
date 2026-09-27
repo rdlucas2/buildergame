@@ -5,12 +5,13 @@ import { rayPlaneY, raycastVoxels } from '../core/raycast';
 import { normalizeRotation, rotatedSize, type Rotation } from '../core/rotation';
 import type { Structure } from '../core/structure';
 import { UndoStack } from '../core/undo';
-import { createPlacement, placementBounds, placementVoxelAt, touchWorld, type Placement, type World } from '../core/world';
+import { createPlacement, placementVoxelAt, touchWorld, type Placement, type World } from '../core/world';
 import { WorldIndex } from '../core/world-index';
 import { GhostPreview } from '../render/ghost';
 import { createGround } from '../render/ground';
 import { OutlineBox } from '../render/highlight';
-import { applyPlacementTransform, createStructureObject, type StructureGeometryCache } from '../render/structure-geometry';
+import { PlacementRenderer } from '../render/placement-renderer';
+import type { StructureGeometryCache } from '../render/structure-geometry';
 import type { VoxelMaterials } from '../render/voxel-materials';
 import type { StructureLibrary } from '../storage/library';
 import { REACH } from './structure-mode';
@@ -39,7 +40,7 @@ export class WorldMode {
   hoverVoxel: Vec3 | null = null;
   onChange?: () => void;
 
-  private readonly objects = new Map<string, Group>();
+  private readonly renderer: PlacementRenderer;
   private ground: Mesh | null = null;
   private readonly ghost: GhostPreview;
   private readonly hoverBox: OutlineBox;
@@ -50,10 +51,12 @@ export class WorldMode {
     world: World,
     private readonly library: StructureLibrary,
     private readonly cache: StructureGeometryCache,
-    private readonly materials: VoxelMaterials,
+    materials: VoxelMaterials,
   ) {
     this._world = world;
     this.index = new WorldIndex((id) => this.library.get(id));
+    this.renderer = new PlacementRenderer(cache, materials);
+    this.group.add(this.renderer.group);
     this.ghost = new GhostPreview(materials);
     this.group.add(this.ghost.group);
     this.hoverBox = new OutlineBox(materials.outlineHover, 0.03);
@@ -97,12 +100,11 @@ export class WorldMode {
     return dropped;
   }
 
-  /** Rebuilds the objects of every placement of a structure (after it was edited). */
+  /** Rebuilds every placement of a structure (after it was edited). */
   refreshStructure(structureId: string): void {
-    this.cache.invalidate(structureId);
+    this.renderer.invalidateStructure(structureId);
     for (const p of this._world.placements) {
       if (p.structureId !== structureId) continue;
-      this.removeObject(p.id);
       this.index.remove(p.id);
       if (this.library.get(structureId)) {
         this.index.add(p);
@@ -295,34 +297,31 @@ export class WorldMode {
 
   private addObject(p: Placement): void {
     const s = this.library.get(p.structureId);
-    if (!s) return;
-    const obj = createStructureObject(this.cache.get(s), this.materials);
-    applyPlacementTransform(obj, p.position, s.voxels.size, p.rotation);
-    obj.name = `placement:${p.id}`;
-    this.objects.set(p.id, obj);
-    this.group.add(obj);
+    if (s) this.renderer.add(p, s);
   }
 
   private removeObject(id: string): void {
-    const obj = this.objects.get(id);
-    if (!obj) return;
-    this.group.remove(obj);
-    this.objects.delete(id);
+    this.renderer.remove(id);
   }
 
   private clearObjects(): void {
-    for (const obj of this.objects.values()) this.group.remove(obj);
-    this.objects.clear();
+    this.renderer.clear();
     this.index.clear();
   }
 
   boundsOf(id: string): AABB | undefined {
-    return this.index.boundsOf(id) ?? (this.index.get(id) && placementBounds(this.index.get(id)!.position, this.library.get(this.index.get(id)!.structureId)!.voxels.size, this.index.get(id)!.rotation));
+    return this.index.boundsOf(id);
+  }
+
+  /** Number of rendered placement instances (for diagnostics). */
+  get renderedCount(): number {
+    return this.renderer.count;
   }
 
   dispose(): void {
     this.cancelPlacing();
     this.clearObjects();
+    this.renderer.dispose();
     this.ghost.dispose();
     this.hoverBox.dispose();
     if (this.ground) {

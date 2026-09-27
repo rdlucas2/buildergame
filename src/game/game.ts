@@ -736,10 +736,17 @@ export class Game {
       importWorldBundleBase64: (b64) => g.importWorldBundle(base64ToBytes(b64)).then((w) => w?.id ?? null),
       stats: () => ({
         placements: g.worldMode.world.placements.length,
+        rendered: g.worldMode.renderedCount,
         drawCalls: g.host.renderer.info.render.calls,
         triangles: g.host.renderer.info.render.triangles,
         persistent: g.library.persistent,
       }),
+      setStartVisible: (v) => g.hud.setStartVisible(v),
+      frameTime: async (frames) => {
+        const t0 = performance.now();
+        for (let i = 0; i < frames; i++) await g.nextFrame();
+        return (performance.now() - t0) / frames;
+      },
     };
   }
 }
@@ -796,7 +803,10 @@ export interface GameDebug {
   flushSave(): Promise<void>;
   exportWorldBundleBase64(): string;
   importWorldBundleBase64(b64: string): Promise<string | null>;
-  stats(): { placements: number; drawCalls: number; triangles: number; persistent: boolean };
+  stats(): { placements: number; rendered: number; drawCalls: number; triangles: number; persistent: boolean };
+  setStartVisible(visible: boolean): void;
+  /** Average milliseconds per frame over the next `frames` frames. */
+  frameTime(frames: number): Promise<number>;
 }
 
 declare global {

@@ -85,4 +85,3 @@ export function applyPlacementTransform(obj: Group, position: { x: number; y: nu
   obj.updateMatrixWorld();
 }
 
-export { VoxelMaterials };

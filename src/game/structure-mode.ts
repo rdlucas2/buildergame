@@ -107,7 +107,6 @@ export class StructureMode {
     if (i < 0 || i >= this.hotbar.length) return;
     this.hotbar[i] = materialId;
     paletteSlotFor(this.palette, materialId);
-    this.mesh.setPalette(meshPaletteFromEntries(this.palette));
   }
 
   inVolume(p: Vec3): boolean {
@@ -173,7 +172,6 @@ export class StructureMode {
     if (!this.inVolume(cell)) return false;
     const before = this.grid.get(cell.x, cell.y, cell.z);
     const after = materialId === null ? AIR : paletteSlotFor(this.palette, materialId);
-    if (materialId !== null && after > this.paletteSizeMeshed) this.mesh.setPalette(meshPaletteFromEntries(this.palette));
     if (before === after) return false;
     const apply = (v: number) => {
       this.grid.set(cell.x, cell.y, cell.z, v);
@@ -183,15 +181,10 @@ export class StructureMode {
     return true;
   }
 
-  private get paletteSizeMeshed(): number {
-    return this.palette.length - 1;
-  }
-
   /** Fills a box with a material (used by tests and future tools). */
   fillBox(min: Vec3, max: Vec3, materialId: string | null): number {
     const cells: Array<{ cell: Vec3; before: number }> = [];
     const after = materialId === null ? AIR : paletteSlotFor(this.palette, materialId);
-    this.mesh.setPalette(meshPaletteFromEntries(this.palette));
     for (let y = min.y; y < max.y; y++)
       for (let z = min.z; z < max.z; z++)
         for (let x = min.x; x < max.x; x++) {
