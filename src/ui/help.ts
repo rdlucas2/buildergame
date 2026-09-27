@@ -27,6 +27,18 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
     ],
   ],
   [
+    'Touch screens',
+    [
+      ['Left stick', 'Move; push it all the way to go faster'],
+      ['Drag anywhere else', 'Look around'],
+      ['Up / Down', 'Fly up or down'],
+      ['Place / Break', 'Build or remove the block under the crosshair; hold to repeat'],
+      ['Hotbar', 'Tap a material to use it; tap it again to see every material'],
+      ['Rotate / Raise / Lower', 'Adjust a structure before you place it'],
+      ['Remove / Move', 'Act on the structure under the crosshair'],
+    ],
+  ],
+  [
     'Structure mode',
     [
       ['Right click', 'Place a block against the face you are looking at'],

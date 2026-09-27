@@ -113,3 +113,98 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12
 .tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .link-btn { cursor: pointer; background: none; border: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; }
 .card-sub { min-height: 2.6em; }
+
+/* ---------- Touch controls ---------- */
+* { -webkit-tap-highlight-color: transparent; }
+html, body { overscroll-behavior: none; }
+#app canvas { touch-action: none; }
+.hotbar { pointer-events: auto; }
+.hotbar .slot { cursor: pointer; }
+
+.touch-ui { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 5; }
+.touch-ui > * { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+.stick {
+  position: absolute;
+  left: calc(22px + env(safe-area-inset-left));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  width: 148px; height: 148px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(15,18,24,0.15) 0%, rgba(15,18,24,0.45) 70%);
+  border: 2px solid rgba(255,255,255,0.28);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+}
+.stick.active { border-color: rgba(255,255,255,0.55); }
+.stick-knob {
+  position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border-radius: 50%;
+  background: rgba(255,255,255,0.32); border: 2px solid rgba(255,255,255,0.7); box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  transition: transform 0.06s linear; pointer-events: none;
+}
+.stick.active .stick-knob { transition: none; background: rgba(255,255,255,0.45); }
+
+.touch-fly {
+  position: absolute; display: flex; flex-direction: column; gap: 12px;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+}
+.touch-actions {
+  position: absolute; display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 12px;
+  right: calc(92px + env(safe-area-inset-right));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+}
+.touch-secondary {
+  position: absolute; display: flex; flex-direction: row; justify-content: flex-end; gap: 8px;
+  right: calc(12px + env(safe-area-inset-right));
+  top: calc(56px + env(safe-area-inset-top));
+}
+
+.tbtn {
+  width: 58px; height: 58px; border-radius: 50%; padding: 0; margin: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: rgba(15,18,24,0.58); color: #fff; border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 3px 12px rgba(0,0,0,0.3); font: 600 10px/1 var(--font); letter-spacing: 0.02em;
+  transition: transform 0.06s, background 0.06s;
+}
+.tbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tbtn span { opacity: 0.9; }
+.tbtn.primary { width: 72px; height: 72px; background: rgba(74,163,255,0.82); border-color: rgba(255,255,255,0.7); color: #061225; }
+.tbtn.primary svg { width: 28px; height: 28px; stroke-width: 2.8; }
+.tbtn.fly { width: 60px; height: 60px; }
+.tbtn.small { width: 48px; height: 48px; font-size: 9px; }
+.tbtn.small svg { width: 18px; height: 18px; }
+.tbtn.pressed { transform: scale(0.92); background: rgba(74,163,255,0.55); }
+.tbtn.primary.pressed { background: rgba(108,181,255,0.95); }
+.tbtn:disabled { opacity: 0.35; }
+
+/* Touch mode: no pointer-lock prompt, no keyboard hints, controls sized for thumbs. */
+body.touch .key-hint, body.touch .hud-hint { display: none; }
+body.touch .top-btn { padding: 8px 11px; }
+body.touch .hud-topright { flex-wrap: wrap; justify-content: flex-end; max-width: 58vw; right: calc(12px + env(safe-area-inset-right)); top: calc(10px + env(safe-area-inset-top)); }
+body.touch .hud-topleft { left: calc(12px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top)); max-width: 40vw; }
+body.touch .hud-mode { font-size: 13px; }
+body.touch .hud-status { font-size: 11px; width: auto; }
+/* The hotbar sits between the thumbstick and the thumb buttons. */
+body.touch .hud-bottom {
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  left: calc(186px + env(safe-area-inset-left));
+  right: calc(250px + env(safe-area-inset-right));
+}
+body.touch .hotbar { max-width: 100%; overflow-x: auto; padding: 5px; gap: 4px; scrollbar-width: none; }
+body.touch .hotbar::-webkit-scrollbar { display: none; }
+body.touch .slot { flex: 0 0 auto; width: 44px; height: 44px; }
+body.touch .slot .swatch { width: 26px; height: 26px; }
+body.touch .slot-name { display: none; }
+body.touch .toasts { right: auto; bottom: auto; left: calc(12px + env(safe-area-inset-left)); top: calc(48px + env(safe-area-inset-top)); max-width: min(360px, 46vw); }
+body.touch .toast { font-size: 12px; padding: 8px 10px; }
+body.touch .crosshair { width: 22px; height: 22px; }
+
+/* Portrait phones: stack the action buttons up the right side and lift the hotbar above the controls. */
+@media (orientation: portrait) {
+  body.touch .hud-bottom { bottom: calc(190px + env(safe-area-inset-bottom)); left: 12px; right: 12px; }
+  body.touch .touch-secondary { top: calc(104px + env(safe-area-inset-top)); flex-wrap: wrap; max-width: calc(100vw - 24px); }
+  body.touch .toasts { top: calc(164px + env(safe-area-inset-top)); max-width: calc(100vw - 24px); }
+  body.touch .hud-status { display: none; }
+  body.touch .hud-topleft { max-width: 34vw; }
+}
+@media (max-height: 430px) and (orientation: landscape) {
+  body.touch .hud-status { display: none; }
+}

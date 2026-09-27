@@ -25,6 +25,7 @@ import { closePanel, isPanelOpen, onPanelChange } from '../ui/panel';
 import { toast } from '../ui/toast';
 import { openWorldPanel } from '../ui/world-panel';
 import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
+import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
 import { DEFAULT_HOTBAR, StructureMode } from './structure-mode';
 import { WorldMode } from './world-mode';
 
@@ -52,6 +53,11 @@ export class Game {
   private hudTimer = 0;
   private frameWaiters: Array<() => void> = [];
   private libraryTab: LibraryTab = 'mine';
+  readonly touch: TouchControls;
+  /** On-screen touch controls are active (no pointer lock, no click-to-start overlay). */
+  touchMode = false;
+  /** `?touch=1` or `?touch=0` pins the mode; otherwise it follows the last input device used. */
+  private readonly touchForced: boolean | null;
 
   static async create(container: HTMLElement): Promise<Game> {
     const library = new StructureLibrary(buildExampleStructures());
@@ -86,8 +92,16 @@ export class Game {
       onWorld: () => this.openWorldMenu(),
       onHelp: () => openHelp(),
       onStructure: () => (this.structureMode ? void this.saveStructure() : void this.enterStructureMode()),
+      onSlot: (i) => this.selectHotbarSlot(i),
     });
     container.appendChild(this.hud.root);
+    this.touch = new TouchControls(container, {
+      controls: this.controls,
+      canvas: this.host.canvas,
+      onAction: (id, phase) => this.onTouchAction(id, phase),
+    });
+    const param = new URLSearchParams(window.location.search).get('touch');
+    this.touchForced = param === '1' ? true : param === '0' ? false : null;
 
     this.worldMode = new WorldMode(world, library, this.cache, this.materials);
     this.worldMode.onChange = () => this.scheduleSave();
@@ -95,6 +109,7 @@ export class Game {
     this.applyWorldPose(world);
 
     this.bindInput();
+    this.setTouchMode(this.touchForced ?? window.matchMedia?.('(pointer: coarse)').matches ?? false);
     this.refreshHudChrome();
     this.start();
   }
@@ -140,7 +155,89 @@ export class Game {
   }
 
   get interactive(): boolean {
-    return (this.controls.isLocked || this.pointerLockUnavailable) && !isPanelOpen();
+    return (this.controls.isLocked || this.pointerLockUnavailable || this.touchMode) && !isPanelOpen();
+  }
+
+  /** Switches between desktop (pointer lock) and touch (on-screen controls) input. */
+  setTouchMode(on: boolean): void {
+    this.touchMode = on;
+    document.body.classList.toggle('touch', on);
+    if (on) this.controls.unlock();
+    this.touch.setVisible(on && !isPanelOpen());
+    this.holdButton = null;
+    this.updateStartOverlay();
+    this.refreshHudChrome();
+  }
+
+  private updateStartOverlay(): void {
+    this.hud.setStartVisible(!this.touchMode && !this.controls.isLocked && !this.pointerLockUnavailable && !isPanelOpen());
+  }
+
+  /** Starts a mouse-button style action that repeats while held (touch Place / Break buttons). */
+  pressAction(button: number): void {
+    if (!this.interactive) return;
+    this.act(button);
+    this.holdButton = button;
+    this.holdTimer = 0;
+    this.lastActedCell = this.currentCellKey();
+  }
+
+  releaseAction(): void {
+    this.holdButton = null;
+  }
+
+  private onTouchAction(id: TouchActionId, phase: 'down' | 'up'): void {
+    if (id === 'place' || id === 'break') {
+      if (phase === 'down') this.pressAction(id === 'place' ? 2 : 0);
+      else this.releaseAction();
+      return;
+    }
+    if (phase !== 'up' || isPanelOpen()) return;
+    const keys: Partial<Record<TouchActionId, [string, { ctrl?: boolean }?]>> = {
+      materials: ['KeyE'],
+      undo: ['KeyZ', { ctrl: true }],
+      redo: ['KeyY', { ctrl: true }],
+      save: ['Enter'],
+      exit: ['Escape'],
+      rotate: ['KeyR'],
+      raise: ['BracketRight'],
+      lower: ['BracketLeft'],
+      cancel: ['Escape'],
+      remove: ['KeyX'],
+      move: ['KeyG'],
+    };
+    if (id === 'pick') this.act(1);
+    else if (id === 'drop') this.act(0);
+    else {
+      const k = keys[id];
+      if (k) this.handleKey(k[0], k[1] ?? {});
+    }
+    this.updateHudStatus();
+  }
+
+  /** Hotbar click or tap: select a slot, or open every material when the slot is already selected. */
+  private selectHotbarSlot(i: number): void {
+    const sm = this.structureMode;
+    if (!sm) return;
+    if (i === sm.selected) {
+      this.handleKey('KeyE');
+      return;
+    }
+    sm.selectSlot(i);
+    this.hud.setHotbar(sm.hotbar, sm.selected);
+  }
+
+  /** Picks the wording for the current input device: keyboard and mouse, or touch buttons. */
+  private say(desktop: string, touch: string): string {
+    return this.touchMode ? touch : desktop;
+  }
+
+  private touchContext(): TouchContext {
+    const sm = this.structureMode;
+    if (sm) return { mode: 'structure', canUndo: sm.undo.canUndo, canRedo: sm.undo.canRedo };
+    const wm = this.worldMode;
+    if (wm.placing) return { mode: 'placing' };
+    return { mode: 'world', hovering: !!wm.hoveredId, canUndo: wm.undo.canUndo, canRedo: wm.undo.canRedo };
   }
 
   // ---- input -----------------------------------------------------------------------------
@@ -150,7 +247,7 @@ export class Game {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      if (isPanelOpen()) return;
+      if (isPanelOpen() || this.touchMode) return;
       if (!this.controls.isLocked && !this.pointerLockUnavailable) {
         this.controls.lock();
         return;
@@ -166,16 +263,28 @@ export class Game {
       this.hud.setStartVisible(false);
       toast('Pointer lock is not available here; click the game to act, use the keys to move.', 'info');
     };
-    this.controls.onLockChange = (locked) => {
-      this.hud.setStartVisible(!locked && !this.pointerLockUnavailable && !isPanelOpen());
+    this.controls.onLockChange = () => {
+      this.updateStartOverlay();
       this.holdButton = null;
     };
     onPanelChange((open) => {
       if (open) this.controls.unlock();
       this.controls.enabled = !open;
-      this.hud.setStartVisible(!open && !this.controls.isLocked && !this.pointerLockUnavailable);
+      this.touch.setVisible(this.touchMode && !open);
+      if (open) this.controls.clearAnalog();
+      this.updateStartOverlay();
       this.holdButton = null;
     });
+    // Follow the input device actually in use, unless the URL pins the mode.
+    window.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (this.touchForced !== null) return;
+        if (e.pointerType === 'touch' && !this.touchMode) this.setTouchMode(true);
+        else if (e.pointerType === 'mouse' && this.touchMode) this.setTouchMode(false);
+      },
+      { capture: true },
+    );
     window.addEventListener('keydown', (e) => {
       if (isTypingTarget(e.target) || isPanelOpen()) return;
       if (this.handleKey(e.code, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })) e.preventDefault();
@@ -313,12 +422,12 @@ export class Game {
         return false;
       case 'KeyX': {
         const p = wm.removeHovered();
-        if (p) toast(`Removed ${this.library.get(p.structureId)?.name ?? 'structure'} (Ctrl+Z to undo)`, 'info', 1800);
+        if (p) toast(`Removed ${this.library.get(p.structureId)?.name ?? 'structure'} ${this.say('(Ctrl+Z to undo)', '(Undo brings it back)')}`, 'info', 1800);
         return !!p;
       }
       case 'KeyG': {
         const p = wm.pickUpHovered();
-        if (p) toast('Moving structure: click to drop it, Esc to put it back', 'info', 2200);
+        if (p) toast(this.say('Moving structure: click to drop it, Esc to put it back', 'Moving structure: tap Place to drop it, Cancel to put it back'), 'info', 2200);
         return !!p;
       }
     }
@@ -342,10 +451,10 @@ export class Game {
     this.refreshHudChrome();
     toast(
       !existing
-        ? 'Structure mode: right click places, left click removes. Enter saves.'
+        ? this.say('Structure mode: right click places, left click removes. Enter saves.', 'Structure mode: aim at the floor and tap Place. Save when you are done.')
         : asCopy
-          ? `Editing a copy of "${existing.name}". Enter saves it as a new structure, Esc leaves.`
-          : `Editing "${existing.name}". Enter saves, Esc leaves.`,
+          ? `Editing a copy of "${existing.name}". ${this.say('Enter saves it as a new structure, Esc leaves.', 'Save keeps it as a new structure.')}`
+          : `Editing "${existing.name}". ${this.say('Enter saves, Esc leaves.', 'Tap Save when you are done.')}`,
       'info',
       3500,
     );
@@ -410,7 +519,7 @@ export class Game {
       toast(`Saved "${s.name}" (${size.x}×${size.y}×${size.z})`, 'success');
     } else {
       this.worldMode.startPlacing(s);
-      toast(`Saved "${s.name}" (${size.x}×${size.y}×${size.z}). Click to place it, R rotates, Esc cancels.`, 'success', 4000);
+      toast(`Saved "${s.name}" (${size.x}×${size.y}×${size.z}). ${this.say('Click to place it, R rotates, Esc cancels.', 'Aim and tap Place to put it in your world.')}`, 'success', 4000);
     }
     return s;
   }
@@ -429,7 +538,7 @@ export class Game {
       const check = this.worldMode.evaluate(s, p.position, p.rotation);
       if (!check.ok) overlapping++;
     }
-    if (overlapping) toast(`${overlapping} placement${overlapping === 1 ? '' : 's'} of "${s.name}" now overlap${overlapping === 1 ? 's' : ''} something. Move them with G.`, 'error', 5000);
+    if (overlapping) toast(`${overlapping} placement${overlapping === 1 ? '' : 's'} of "${s.name}" now overlap${overlapping === 1 ? 's' : ''} something. Move them with ${this.say('G', 'Move')}.`, 'error', 5000);
   }
 
   // ---- panels ----------------------------------------------------------------------------
@@ -462,7 +571,7 @@ export class Game {
           onPlace: (s) => {
             closePanel();
             this.worldMode.startPlacing(s);
-            toast(`Placing "${s.name}": click to place, R rotates, Esc cancels.`, 'info', 3000);
+            toast(`Placing "${s.name}": ${this.say('click to place, R rotates, Esc cancels.', 'aim, then tap Place. Rotate turns it.')}`, 'info', 3000);
           },
           onEdit: (s) => void this.enterStructureMode(s),
           onDuplicate: async (s) => {
@@ -656,17 +765,18 @@ export class Game {
         !sm.editing ? 'Structure mode' : sm.asCopy ? `Structure mode — copy of "${sm.editing.name}"` : `Structure mode — editing "${sm.editing.name}"`,
       );
       this.hud.setHotbar(sm.hotbar, sm.selected);
-      this.hud.structureBtn.textContent = 'Save structure (Enter)';
+      this.hud.setStructureButton('Save structure', 'Enter');
       this.hud.setHint('Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave');
     } else {
       this.hud.setMode(`World: ${this.worldMode.world.name}`);
-      this.hud.structureBtn.textContent = 'Build structure (B)';
+      this.hud.setStructureButton('Build structure', 'B');
       this.hud.setHint('Tab: library · B: build a structure · M: worlds · H: help');
     }
     this.updateHudStatus();
   }
 
   private updateHudStatus(): void {
+    this.touch.setContext(this.touchContext());
     const p = this.host.camera.position;
     const pos = `Position ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`;
     const sm = this.structureMode;
@@ -777,6 +887,8 @@ export class Game {
       }),
       setStartVisible: (v) => g.hud.setStartVisible(v),
       pointer: () => ({ locked: g.controls.isLocked, unavailable: g.pointerLockUnavailable }),
+      touch: () => ({ mode: g.touchMode, ...g.touch.state() }),
+      setTouchMode: (on) => g.setTouchMode(on),
       frameTime: async (frames) => {
         const t0 = performance.now();
         for (let i = 0; i < frames; i++) await g.nextFrame();
@@ -845,6 +957,9 @@ export interface GameDebug {
   setStartVisible(visible: boolean): void;
   /** Pointer-lock state: whether the mouse is captured, and whether the game gave up on capturing it. */
   pointer(): { locked: boolean; unavailable: boolean };
+  /** Touch-control state: whether touch mode is on, the overlay is visible, and which action buttons show. */
+  touch(): { mode: boolean; visible: boolean; actions: Array<{ id: string; disabled: boolean }> };
+  setTouchMode(on: boolean): void;
   /** Average milliseconds per frame over the next `frames` frames. */
   frameTime(frames: number): Promise<number>;
 }

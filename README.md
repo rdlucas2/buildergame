@@ -39,6 +39,11 @@ The game is a static site with no server, hosted on GitHub Pages at
 | P | Save a screenshot |
 | Ctrl+Z / Ctrl+Y | Undo / redo (blocks in structure mode, placements in world mode) |
 
+On phones and tablets the game switches to touch controls automatically: a left thumbstick to
+move, drag anywhere else to look, up and down buttons to fly, and on-screen buttons such as Place,
+Break, Rotate and Undo that act on whatever is under the centre crosshair. Tap a hotbar slot to pick
+a material. Add `?touch=1` or `?touch=0` to the URL to force touch controls on or off.
+
 World mode: **left click** places the preview, **R** rotates it, **[** / **]** lower / raise it,
 **Esc** or right click cancels, **X** removes the structure you look at, **G** picks it up to move it.
 
