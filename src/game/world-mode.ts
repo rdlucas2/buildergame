@@ -39,6 +39,10 @@ export class WorldMode {
   hoveredId: string | null = null;
   hoverVoxel: Vec3 | null = null;
   onChange?: () => void;
+  /** Fine-grained placement events, used by the ecosystem to update sky cover incrementally. */
+  onPlacementAdded?: (p: Placement) => void;
+  onPlacementRemoved?: (id: string) => void;
+  onPlacementsReset?: (placements: readonly Placement[]) => void;
 
   private readonly renderer: PlacementRenderer;
   private ground: Mesh | null = null;
@@ -83,8 +87,9 @@ export class WorldMode {
       this.ground.geometry.dispose();
       (this.ground.material as { dispose(): void }).dispose();
     }
-    this.ground = createGround(world.ground.size, world.ground.material);
-    this.group.add(this.ground);
+    // Wild worlds draw their own ground from the simulation (see TerrainView).
+    this.ground = world.ecosystem ? null : createGround(world.ground.size, world.ground.material);
+    if (this.ground) this.group.add(this.ground);
 
     const dropped: string[] = [];
     const kept: Placement[] = [];
@@ -95,6 +100,7 @@ export class WorldMode {
     this._world = { ...world, placements: kept };
     this.index.load(this._world);
     for (const p of kept) this.addObject(p);
+    this.onPlacementsReset?.(kept);
     this.undo.clear();
     if (dropped.length) this.onChange?.();
     return dropped;
@@ -106,9 +112,11 @@ export class WorldMode {
     for (const p of this._world.placements) {
       if (p.structureId !== structureId) continue;
       this.index.remove(p.id);
+      this.onPlacementRemoved?.(p.id);
       if (this.library.get(structureId)) {
         this.index.add(p);
         this.addObject(p);
+        this.onPlacementAdded?.(p);
       }
     }
   }
@@ -212,6 +220,7 @@ export class WorldMode {
     this._world = touchWorld({ ...this._world, placements: [...this._world.placements, p] });
     this.index.add(p);
     this.addObject(p);
+    this.onPlacementAdded?.(p);
     if (notify) this.onChange?.();
   }
 
@@ -220,6 +229,7 @@ export class WorldMode {
     if (!p) return undefined;
     this._world = touchWorld({ ...this._world, placements: this._world.placements.filter((x) => x.id !== id) });
     this.removeObject(id);
+    this.onPlacementRemoved?.(id);
     if (notify) this.onChange?.();
     return p;
   }

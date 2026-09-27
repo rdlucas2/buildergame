@@ -24,6 +24,16 @@ export interface Spawn {
   pitch: number;
 }
 
+/**
+ * State of a wild world's ecosystem. Terrain is regenerated from `seed`; `time` is simulation seconds
+ * since the world began (0 is midnight of day 1); `biomass` is grass per ground cell (0..255).
+ */
+export interface EcosystemState {
+  seed: number;
+  time: number;
+  biomass?: Uint8Array;
+}
+
 /** A player's world: metadata plus where each structure instance sits. */
 export interface World {
   id: string;
@@ -33,6 +43,8 @@ export interface World {
   ground: GroundSettings;
   spawn: Spawn;
   placements: Placement[];
+  /** Present only for wild worlds (chosen when the world is created). */
+  ecosystem?: EcosystemState;
 }
 
 /** Reference to a structure file as listed in a world file. */
@@ -45,17 +57,27 @@ export interface StructureRef {
 export const DEFAULT_GROUND: GroundSettings = { material: 'grass', size: 1024 };
 export const DEFAULT_SPAWN: Spawn = { position: [0, 4, 12], yaw: 0, pitch: -0.15 };
 
-export function createWorld(o: { name: string; id?: string; ground?: GroundSettings; spawn?: Spawn }): World {
+/** Where players start in a wild world: high enough to see the land and the nearest pond. */
+export const WILD_SPAWN: Spawn = { position: [0, 26, 44], yaw: 0, pitch: -0.42 };
+
+export function createWorld(o: { name: string; id?: string; ground?: GroundSettings; spawn?: Spawn; ecosystem?: EcosystemState }): World {
   const now = nowIso();
-  return {
+  const spawn = o.spawn ?? (o.ecosystem ? WILD_SPAWN : DEFAULT_SPAWN);
+  const w: World = {
     id: o.id ?? newId(),
     name: o.name,
     createdAt: now,
     updatedAt: now,
     ground: { ...(o.ground ?? DEFAULT_GROUND) },
-    spawn: { ...(o.spawn ?? DEFAULT_SPAWN), position: [...(o.spawn ?? DEFAULT_SPAWN).position] as Vec3Tuple },
+    spawn: { ...spawn, position: [...spawn.position] as Vec3Tuple },
     placements: [],
   };
+  if (o.ecosystem) w.ecosystem = { ...o.ecosystem };
+  return w;
+}
+
+export function isWild(w: World): boolean {
+  return !!w.ecosystem;
 }
 
 export function createPlacement(structureId: string, position: Vec3, rotation: Rotation, id = newId()): Placement {

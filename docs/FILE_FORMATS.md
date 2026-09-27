@@ -98,6 +98,28 @@ Placements never overlap: when a world is edited in game, a new placement is acc
 solid voxel of it coincides with a solid voxel of an existing placement (bounding boxes may touch or
 even interleave, as with two L-shapes).
 
+### Wild worlds (version 2)
+
+A world created with the **Wild world** option is written as `"version": 2` with an extra
+`ecosystem` block. Plain worlds are still written as version 1, and readers accept both.
+
+```json
+"ecosystem": {
+  "seed": 3141592653,
+  "time": 1404.2,
+  "biomass": { "encoding": "rle-u16-base64", "levels": 16, "data": "…" }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `seed` | Unsigned 32-bit seed. The terrain, meaning ponds and streams, is regenerated from it and is not stored. |
+| `time` | Simulation seconds since the world began. `0` is midnight of day 1, and one day lasts 480 seconds. |
+| `biomass` | Optional grass amount per ground cell. It is quantised to `levels` steps (0 bare to 15 full), laid out row by row with index `(x + size/2) + (z + size/2) * size`, where `size` is `ground.size`. It is then run-length encoded like structure voxels. When missing, it is regenerated from the seed. |
+
+Grass grows only on ground cells with no block above them in any placement, and it dies back under
+roofs. Water cells never hold grass.
+
 ## World bundle: `*.world.zip`
 
 A zip archive that makes a world self-contained for sharing:

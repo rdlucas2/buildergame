@@ -1,11 +1,16 @@
 import { z } from 'zod';
 import { vec3FromTuple, vec3ToTuple } from '../math';
 import { isRotation } from '../rotation';
-import { referencedStructureIds, structureFileName, type StructureRef, type World } from '../world';
+import { referencedStructureIds, structureFileName, type EcosystemState, type StructureRef, type World } from '../world';
 import { FileFormatError, formatZodError, parseJsonText } from './errors';
+import { decodeVoxelData, encodeVoxelData } from './rle';
 
 export const WORLD_FORMAT = 'buildergame.world';
-export const WORLD_FORMAT_VERSION = 1;
+/** Newest version written. Version 1 files (no ecosystem) are still read, and plain worlds still write 1. */
+export const WORLD_FORMAT_VERSION = 2;
+/** Biomass is stored quantised to this many levels so that large even areas compress well. */
+export const BIOMASS_LEVELS = 16;
+const BIOMASS_STEP = 255 / (BIOMASS_LEVELS - 1);
 export const WORLD_FILE_EXTENSION = '.world.json';
 export const WORLD_BUNDLE_EXTENSION = '.world.zip';
 
@@ -14,7 +19,7 @@ const coord = int.min(-1_000_000).max(1_000_000);
 
 export const WorldFileSchema = z.object({
   format: z.literal(WORLD_FORMAT),
-  version: z.literal(WORLD_FORMAT_VERSION),
+  version: z.union([z.literal(1), z.literal(2)]),
   id: z.string().min(1).max(128),
   name: z.string().max(200),
   createdAt: z.string().max(64),
@@ -34,15 +39,28 @@ export const WorldFileSchema = z.object({
       rotation: int.refine(isRotation, 'rotation must be 0, 1, 2 or 3'),
     }),
   ),
+  ecosystem: z
+    .object({
+      seed: int.min(0).max(0xffffffff),
+      time: z.number().min(0).max(1e12),
+      biomass: z
+        .object({
+          encoding: z.literal('rle-u16-base64'),
+          levels: z.literal(BIOMASS_LEVELS),
+          data: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export type WorldFile = z.infer<typeof WorldFileSchema>;
 
 /** `structureName` supplies display names for the structure reference list. */
 export function encodeWorld(world: World, structureName: (id: string) => string | undefined): WorldFile {
-  return {
+  const file: WorldFile = {
     format: WORLD_FORMAT,
-    version: WORLD_FORMAT_VERSION,
+    version: world.ecosystem ? 2 : 1,
     id: world.id,
     name: world.name,
     createdAt: world.createdAt,
@@ -57,6 +75,37 @@ export function encodeWorld(world: World, structureName: (id: string) => string 
       rotation: p.rotation,
     })),
   };
+  if (world.ecosystem) file.ecosystem = encodeEcosystem(world.ecosystem);
+  return file;
+}
+
+function encodeEcosystem(e: EcosystemState): NonNullable<WorldFile['ecosystem']> {
+  const out: NonNullable<WorldFile['ecosystem']> = { seed: e.seed >>> 0, time: e.time };
+  if (e.biomass) {
+    const q = new Uint16Array(e.biomass.length);
+    for (let i = 0; i < q.length; i++) q[i] = Math.round(e.biomass[i] / BIOMASS_STEP);
+    out.biomass = { encoding: 'rle-u16-base64', levels: BIOMASS_LEVELS, data: encodeVoxelData(q) };
+  }
+  return out;
+}
+
+function decodeEcosystem(e: NonNullable<WorldFile['ecosystem']>, groundSize: number): EcosystemState {
+  const out: EcosystemState = { seed: e.seed, time: e.time };
+  if (e.biomass) {
+    let q: Uint16Array;
+    try {
+      q = decodeVoxelData(e.biomass.data, groundSize * groundSize);
+    } catch (err) {
+      throw new FileFormatError(`Invalid world file: ecosystem biomass is corrupt (${(err as Error).message})`);
+    }
+    const b = new Uint8Array(q.length);
+    for (let i = 0; i < q.length; i++) {
+      if (q[i] >= BIOMASS_LEVELS) throw new FileFormatError('Invalid world file: ecosystem biomass level out of range');
+      b[i] = Math.round(q[i] * BIOMASS_STEP);
+    }
+    out.biomass = b;
+  }
+  return out;
 }
 
 export function serializeWorld(world: World, structureName: (id: string) => string | undefined): string {
@@ -95,6 +144,7 @@ export function decodeWorld(json: unknown): DecodedWorld {
       rotation: p.rotation,
     })),
   };
+  if (f.ecosystem) world.ecosystem = decodeEcosystem(f.ecosystem, f.ground.size);
   return { world, structureRefs: f.structures.map((s) => ({ ...s })) };
 }
 
