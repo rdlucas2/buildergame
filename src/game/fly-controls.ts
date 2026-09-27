@@ -19,8 +19,12 @@ export class FlyControls {
   sensitivity = 0.0022;
   enabled = true;
   onLockChange?: (locked: boolean) => void;
+  /** Called only when the browser refuses pointer lock outright (every attempt failed). */
+  onLockFailed?: () => void;
 
   private readonly keys = new Set<string>();
+  /** A lock request is pending on a browser whose requestPointerLock returns no promise. */
+  private legacyLockPending = false;
   private readonly onKeyDown = (e: KeyboardEvent) => {
     if (isTypingTarget(e.target)) return;
     this.keys.add(e.code);
@@ -33,7 +37,15 @@ export class FlyControls {
   };
   private readonly onPointerLockChange = () => {
     this.keys.clear();
+    if (this.isLocked) this.legacyLockPending = false;
     this.onLockChange?.(this.isLocked);
+  };
+  // Promise-based browsers report failure through the promise (see `lock`), and fire this event
+  // even when the fallback request then succeeds, so it only counts for promise-less browsers.
+  private readonly onPointerLockError = () => {
+    if (!this.legacyLockPending) return;
+    this.legacyLockPending = false;
+    this.onLockFailed?.();
   };
   private readonly onWheel = (e: WheelEvent) => {
     if (!this.isLocked) return;
@@ -52,6 +64,7 @@ export class FlyControls {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('pointerlockerror', this.onPointerLockError);
     domElement.addEventListener('wheel', this.onWheel, { passive: false });
     this.apply();
   }
@@ -60,14 +73,27 @@ export class FlyControls {
     return document.pointerLockElement === this.domElement;
   }
 
+  /**
+   * Requests pointer lock with raw (un-accelerated) mouse input, falling back to a plain request on
+   * platforms that reject raw input (e.g. Chrome on Linux and macOS). `onLockFailed` fires only when
+   * the fallback fails too.
+   */
   lock(): void {
     if (this.isLocked) return;
-    try {
-      const p = this.domElement.requestPointerLock?.({ unadjustedMovement: true } as never) as unknown;
-      if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => this.domElement.requestPointerLock());
-    } catch {
-      this.domElement.requestPointerLock?.();
-    }
+    const el = this.domElement;
+    const fail = () => this.onLockFailed?.();
+    const request = (options: PointerLockOptions | undefined, onReject: () => void) => {
+      let result: unknown;
+      try {
+        result = options ? el.requestPointerLock(options) : el.requestPointerLock();
+      } catch {
+        onReject();
+        return;
+      }
+      if (result && typeof (result as Promise<void>).then === 'function') (result as Promise<void>).catch(onReject);
+      else this.legacyLockPending = true;
+    };
+    request({ unadjustedMovement: true }, () => request(undefined, fail));
   }
 
   unlock(): void {
@@ -137,6 +163,7 @@ export class FlyControls {
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    document.removeEventListener('pointerlockerror', this.onPointerLockError);
     this.domElement.removeEventListener('wheel', this.onWheel);
   }
 }

@@ -64,27 +64,37 @@ test('structure mode measures what you build and refuses to save nothing', async
   await page.screenshot({ path: `${SHOTS}/structure-mode.png` });
 });
 
-test('mouse clicks place and remove blocks through the crosshair', async ({ page }) => {
+test('mouse clicks take control, then place and remove blocks through the crosshair', async ({ page }) => {
   await boot(page);
-  await page.evaluate(async () => {
-    const g = window.__game!;
-    await g.enterStructureMode();
-    g.setPose({ position: [32.5, 4, 36.5], yaw: 0, pitch: -Math.PI / 2 + 0.05 }); // looking straight down
-    await g.nextFrame();
-  });
-  const canvas = page.locator('canvas');
-  await canvas.click({ button: 'left', position: { x: 640, y: 400 } }); // first click: pointer lock attempt
-  await page.waitForTimeout(100);
-  const hover = await page.evaluate(() => window.__game!.hover());
-  expect(hover?.place).toEqual({ x: 32, y: 0, z: 36 });
-  await canvas.click({ button: 'right', position: { x: 640, y: 400 } });
-  await page.waitForTimeout(100);
-  expect((await page.evaluate(() => window.__game!.dimensions()))!.blocks).toBe(1);
-  await page.evaluate(() => window.__game!.nextFrame());
-  expect((await page.evaluate(() => window.__game!.hover()))?.voxel).toEqual({ x: 32, y: 0, z: 36 });
-  await canvas.click({ button: 'left', position: { x: 640, y: 400 } });
-  await page.waitForTimeout(100);
+  const lookDown = () =>
+    page.evaluate(async () => {
+      const g = window.__game!;
+      g.setPose({ position: [32.5, 4, 36.5], yaw: 0, pitch: -Math.PI / 2 + 0.05 }); // straight down
+      await g.nextFrame();
+    });
+  await page.evaluate(() => window.__game!.enterStructureMode());
+
+  // The first click only captures the mouse. Chromium on Linux rejects raw-input pointer lock, so
+  // this also proves the plain-lock fallback works and the game does not give up on capturing.
+  await page.locator('canvas').click({ position: { x: 640, y: 360 } });
+  await expect.poll(() => page.evaluate(() => window.__game!.pointer().locked)).toBe(true);
+  await page.waitForTimeout(500); // the rejected raw-input request reports its error after the lock lands
+  expect(await page.evaluate(() => window.__game!.pointer())).toEqual({ locked: true, unavailable: false });
+  expect(await page.locator('.toast', { hasText: 'Pointer lock is not available' }).count()).toBe(0);
   expect((await page.evaluate(() => window.__game!.dimensions()))!.blocks).toBe(0);
+
+  // While locked, click in place (no pointer move) as a real locked mouse would.
+  await lookDown();
+  expect((await page.evaluate(() => window.__game!.hover()))?.place).toEqual({ x: 32, y: 0, z: 36 });
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+  await expect.poll(() => page.evaluate(() => window.__game!.dimensions()!.blocks)).toBe(1);
+
+  await lookDown();
+  expect((await page.evaluate(() => window.__game!.hover()))?.voxel).toEqual({ x: 32, y: 0, z: 36 });
+  await page.mouse.down({ button: 'left' });
+  await page.mouse.up({ button: 'left' });
+  await expect.poll(() => page.evaluate(() => window.__game!.dimensions()!.blocks)).toBe(0);
 });
 
 test('save, place, reject overlap, stack, persist across reload', async ({ page }) => {

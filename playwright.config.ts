@@ -24,7 +24,9 @@ export default defineConfig({
       args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // channel 'chromium' runs the full browser in new headless mode. The default headless shell
+  // reports synthetic mouse movement while the pointer is locked, which scrambles mouse look.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chromium' } }],
   webServer: {
     command: 'npm run dev -- --port 5173 --strictPort',
     url: 'http://localhost:5173',

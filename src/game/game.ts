@@ -159,11 +159,11 @@ export class Game {
       this.lastActedCell = this.currentCellKey();
     });
     document.addEventListener('mouseup', () => (this.holdButton = null));
-    document.addEventListener('pointerlockerror', () => {
+    this.controls.onLockFailed = () => {
       this.pointerLockUnavailable = true;
       this.hud.setStartVisible(false);
       toast('Pointer lock is not available here; click the game to act, use the keys to move.', 'info');
-    });
+    };
     this.controls.onLockChange = (locked) => {
       this.hud.setStartVisible(!locked && !this.pointerLockUnavailable && !isPanelOpen());
       this.holdButton = null;
@@ -742,6 +742,7 @@ export class Game {
         persistent: g.library.persistent,
       }),
       setStartVisible: (v) => g.hud.setStartVisible(v),
+      pointer: () => ({ locked: g.controls.isLocked, unavailable: g.pointerLockUnavailable }),
       frameTime: async (frames) => {
         const t0 = performance.now();
         for (let i = 0; i < frames; i++) await g.nextFrame();
@@ -805,6 +806,8 @@ export interface GameDebug {
   importWorldBundleBase64(b64: string): Promise<string | null>;
   stats(): { placements: number; rendered: number; drawCalls: number; triangles: number; persistent: boolean };
   setStartVisible(visible: boolean): void;
+  /** Pointer-lock state: whether the mouse is captured, and whether the game gave up on capturing it. */
+  pointer(): { locked: boolean; unavailable: boolean };
   /** Average milliseconds per frame over the next `frames` frames. */
   frameTime(frames: number): Promise<number>;
 }
