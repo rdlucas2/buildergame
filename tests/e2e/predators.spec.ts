@@ -16,6 +16,17 @@ async function boot(page: Page): Promise<string[]> {
   return errors;
 }
 
+/**
+ * Creates a seeded wild world that starts paused. Speed carries over to a new world, so pausing
+ * first means the simulation doesn't move in real time before the test looks at it.
+ */
+async function wildWorld(page: Page, name: string, seed: number): Promise<void> {
+  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await page.evaluate(({ name, seed }) => window.__game!.createWorld(name, true, seed), { name, seed });
+  // Not a single tick has run: the world is exactly as created (07:00 on day 1).
+  expect(await page.evaluate(() => window.__game!.eco()!.time)).toBe((480 * 7) / 24);
+}
+
 const creatures = (page: Page) => page.evaluate(() => window.__game!.ecoCreatures());
 const eco = (page: Page) => page.evaluate(() => window.__game!.eco());
 
@@ -27,8 +38,7 @@ async function frames(page: Page, n = 3): Promise<void> {
 
 /** Creates a seeded wild world, pauses it, and places a Rabbit Warren beside the herd. */
 async function warrenWorld(page: Page, name: string): Promise<{ x: number; z: number }> {
-  await page.evaluate((n) => window.__game!.createWorld(n, true, 12345), name);
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, name, 12345);
   const herd = await creatures(page);
   const cx = Math.round(herd.reduce((s, c) => s + c.x, 0) / herd.length);
   const cz = Math.round(herd.reduce((s, c) => s + c.z, 0) / herd.length);
@@ -40,8 +50,7 @@ async function warrenWorld(page: Page, name: string): Promise<{ x: number; z: nu
 
 test('a wolf pack arrives late on day 1 and the strip counts it', async ({ page }) => {
   const errors = await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Pack', true, 12345));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, 'Pack', 12345);
   expect((await eco(page))!.predators).toBe(0);
   await expect(page.locator('#eco-wolves')).toBeHidden();
   await page.evaluate((s) => window.__game!.ecoAdvance(s), FIRST_PACK + 1);
@@ -110,8 +119,7 @@ test('rabbits in a warren make it through a night with wolves about', async ({ p
 
 test('the Nature panel releases a wolf pack and graphs both species', async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Release pack', true, 12345));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, 'Release pack', 12345);
   await page.evaluate((s) => window.__game!.ecoAdvance(s), 60);
   await page.evaluate(() => window.__game!.setPose({ position: [0, 6, 20], yaw: 0, pitch: -0.5 }));
   await frames(page);
