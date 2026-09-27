@@ -2,11 +2,13 @@ import {
   CanvasTexture,
   DataTexture,
   Group,
+  InstancedMesh,
   LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   NearestFilter,
+  Object3D,
   PlaneGeometry,
   RepeatWrapping,
   RGBAFormat,
@@ -14,20 +16,22 @@ import {
   UnsignedByteType,
 } from 'three';
 import { hash3 } from '../sim/rng';
-import { isShore } from '../sim/terrain';
+import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { Ecosystem } from '../sim/ecosystem';
 
-export type Overlay = 'none' | 'food' | 'sky' | 'water';
-export const OVERLAYS: readonly Overlay[] = ['none', 'food', 'sky', 'water'];
+export type Overlay = 'none' | 'food' | 'sky' | 'water' | 'safety';
+export const OVERLAYS: readonly Overlay[] = ['none', 'food', 'sky', 'water', 'safety'];
 
 const DIRT = [124, 98, 64];
 const LUSH = [74, 146, 46];
 const WATER = [52, 116, 186];
+const SAFE = [64, 222, 196];
 
 /**
  * The ground of a wild world, drawn from the simulation: one texel per ground cell showing water
  * and grass (bare earth to lush green), or an overlay that explains the rules (where food is,
- * where the sky is blocked, where creatures can drink). A faint grid plane sits on top.
+ * where the sky is blocked, where creatures can drink, where rabbits are safe from wolves). A faint
+ * grid plane sits on top. Safe spots above the ground (on floors and platforms) get flat tiles.
  */
 export class TerrainView {
   readonly group = new Group();
@@ -40,12 +44,19 @@ export class TerrainView {
   private overlay: Overlay = 'none';
   private row = 0;
   private passQueued = true;
+  /** 1 where a ground cell is safe from predators, as of `safetyVersion`. */
+  private readonly safeGround: Uint8Array;
+  private safetyVersion = -1;
+  private tiles: InstancedMesh | null = null;
+  private readonly tileMaterial = new MeshBasicMaterial({ color: 0x40dec4, transparent: true, opacity: 0.6, depthWrite: false });
+  private readonly tileGeometry = new PlaneGeometry(0.9, 0.9).rotateX(-Math.PI / 2);
 
   constructor(private readonly eco: Ecosystem) {
     const size = eco.size;
     this.data = new Uint8Array(size * size * 4);
     this.jitter = new Int8Array(size * size);
     this.shore = new Uint8Array(size * size);
+    this.safeGround = new Uint8Array(size * size);
     for (let z = 0; z < size; z++) {
       for (let x = 0; x < size; x++) {
         const i = x + z * size;
@@ -91,8 +102,45 @@ export class TerrainView {
     this.refreshAll();
   }
 
+  /** Brings the safe-cell data up to date with the simulation's safety map (only while shown). */
+  private syncSafety(): boolean {
+    if (this.overlay !== 'safety') {
+      if (this.tiles) this.tiles.visible = false;
+      return false;
+    }
+    const version = this.eco.safety.currentVersion;
+    if (this.safetyVersion === version && this.tiles) {
+      this.tiles.visible = true;
+      return false;
+    }
+    this.safetyVersion = version;
+    const cells = this.eco.safety.safeCells();
+    const size = this.eco.size;
+    this.safeGround.fill(0);
+    const raised = cells.filter((c) => c.y > 0);
+    for (const c of cells) if (c.y === 0 && inGround(size, c.x, c.z)) this.safeGround[cellIndex(size, c.x, c.z)] = 1;
+    if (this.tiles) {
+      this.group.remove(this.tiles);
+      this.tiles.dispose();
+    }
+    this.tiles = new InstancedMesh(this.tileGeometry, this.tileMaterial, Math.max(1, raised.length));
+    this.tiles.name = 'safety-tiles';
+    this.tiles.count = raised.length;
+    this.tiles.renderOrder = 2;
+    const o = new Object3D();
+    raised.forEach((c, i) => {
+      o.position.set(c.x + 0.5, c.y + 0.03, c.z + 0.5);
+      o.updateMatrix();
+      this.tiles!.setMatrixAt(i, o.matrix);
+    });
+    this.tiles.instanceMatrix.needsUpdate = true;
+    this.group.add(this.tiles);
+    return true;
+  }
+
   /** Recolours every cell right away and uploads the texture. */
   refreshAll(): void {
+    this.syncSafety();
     this.paintRows(0, this.eco.size);
     this.texture.needsUpdate = true;
     this.row = 0;
@@ -106,6 +154,7 @@ export class TerrainView {
 
   /** Paints up to `rows` rows of a pending pass, uploading when the pass completes. */
   update(rows = 128): void {
+    if (this.syncSafety()) this.passQueued = true;
     if (!this.passQueued) return;
     const size = this.eco.size;
     const end = Math.min(size, this.row + rows);
@@ -135,7 +184,7 @@ export class TerrainView {
         const j = this.jitter[i];
         if (water[i]) {
           if (o === 'water') [cr, cg, cb] = [64, 196, 236];
-          else if (o === 'food' || o === 'sky') [cr, cg, cb] = [34, 58, 96];
+          else if (o === 'food' || o === 'sky' || o === 'safety') [cr, cg, cb] = [34, 58, 96];
           else [cr, cg, cb] = [WATER[0] + (j >> 1), WATER[1] + (j >> 1), WATER[2] + j];
         } else {
           const t = biomass[i] / 255;
@@ -152,6 +201,9 @@ export class TerrainView {
           } else if (o === 'water') {
             if (this.shore[i]) [cr, cg, cb] = [250, 226, 92];
             else [cr, cg, cb] = [cr * 0.5, cg * 0.5, cb * 0.5];
+          } else if (o === 'safety') {
+            if (this.safeGround[i]) [cr, cg, cb] = [SAFE[0] + j, SAFE[1] + j, SAFE[2] + j];
+            else [cr, cg, cb] = [cr * 0.45, cg * 0.45, cb * 0.45];
           }
         }
         d[p] = cr < 0 ? 0 : cr > 255 ? 255 : cr;
@@ -173,6 +225,9 @@ export class TerrainView {
 
   dispose(): void {
     this.texture.dispose();
+    this.tiles?.dispose();
+    this.tileGeometry.dispose();
+    this.tileMaterial.dispose();
     for (const m of [this.ground, this.grid]) {
       m.geometry.dispose();
       const mat = m.material as MeshBasicMaterial;

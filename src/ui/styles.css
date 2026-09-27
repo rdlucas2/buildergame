@@ -231,7 +231,12 @@ body.touch .eco-speed, body.touch .eco-nature { padding: 7px 9px; }
 body.touch.wild .toasts { top: calc(96px + env(safe-area-inset-top)); }
 @media (orientation: portrait) {
   body.touch .eco-strip { top: calc(160px + env(safe-area-inset-top)); }
-  body.touch.wild .toasts { top: calc(204px + env(safe-area-inset-top)); }
+  body.touch.wild .toasts { top: calc(252px + env(safe-area-inset-top)); }
+}
+/* Narrow screens: the counts and the speed buttons wrap onto a second row instead of running off. */
+@media (max-width: 560px) {
+  .eco-strip { flex-wrap: wrap; row-gap: 4px; max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); border-radius: 18px; }
+  .eco-clock { min-width: 0; }
 }
 
 .check-field { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; cursor: pointer; }
@@ -243,6 +248,10 @@ body.touch.wild .toasts { top: calc(96px + env(safe-area-inset-top)); }
 .sparkline { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 6px; margin: 6px 0 10px; min-height: 28px; }
 .sparkline svg { display: block; width: 100%; height: 64px; }
 .spark-prey { fill: none; stroke: #e8c89a; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark-wolves { fill: none; stroke: #9fb2c8; stroke-width: 2; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }
+.spark-legend { display: flex; gap: 14px; margin-top: 4px; }
+.key-prey { color: #e8c89a; }
+.key-wolves { color: #9fb2c8; }
 .release-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0; }
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0; }
 .stat { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }

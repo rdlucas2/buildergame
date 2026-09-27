@@ -9,6 +9,8 @@ export interface Body {
 }
 
 export const PREY_BODY: Body = { height: 1, climb: 1, drop: 3 };
+/** Predators stand 2 tall and leap 2 up: a 1-high gap stops them, and so does a wall 3 or more high. */
+export const PREDATOR_BODY: Body = { height: 2, climb: 2, drop: 3 };
 
 export interface Cell {
   x: number;
@@ -103,6 +105,24 @@ export class Navigator {
   }
 
   /**
+   * Calls `visit` for every position a body standing at `c` can move to in one step (eight
+   * directions, never cutting a corner), with the cost of the step.
+   */
+  forEachMove(c: Cell, body: Body, visit: (x: number, y: number, z: number, cost: number) => void): void {
+    for (const [dx, dz, base] of DIRS) {
+      if (dx !== 0 && dz !== 0) {
+        // No cutting corners: both side cells must be passable at this height.
+        if (this.landing(c.x, c.y, c.z, c.x + dx, c.z, body) !== c.y || this.landing(c.x, c.y, c.z, c.x, c.z + dz, body) !== c.y) continue;
+      }
+      const nx = c.x + dx;
+      const nz = c.z + dz;
+      const ny = this.landing(c.x, c.y, c.z, nx, nz, body);
+      if (ny === null) continue;
+      visit(nx, ny, nz, base * (ny === 0 && this.isWater(nx, nz) ? WATER_COST : 1) + (ny > c.y ? 0.5 : 0));
+    }
+  }
+
+  /**
    * A* from `start` to `goal` (or to any cell `isGoal` accepts). Explores at most `maxNodes` cells
    * and returns the path (excluding the start) or null when no path is found within the budget.
    */
@@ -128,25 +148,16 @@ export class Navigator {
       if (k !== sk && reached(c)) return this.rebuild(came, cells, k, sk);
       expanded++;
       const gc = g.get(k)!;
-      for (const [dx, dz, cost] of DIRS) {
-        const nx = c.x + dx;
-        const nz = c.z + dz;
-        if (dx !== 0 && dz !== 0) {
-          // No cutting corners: both side cells must be passable at this height.
-          if (this.landing(c.x, c.y, c.z, c.x + dx, c.z, body) !== c.y || this.landing(c.x, c.y, c.z, c.x, c.z + dz, body) !== c.y) continue;
-        }
-        const ny = this.landing(c.x, c.y, c.z, nx, nz, body);
-        if (ny === null) continue;
+      this.forEachMove(c, body, (nx, ny, nz, step) => {
         const nk = key(nx, ny, nz);
-        const step = cost * (ny === 0 && this.isWater(nx, nz) ? WATER_COST : 1) + (ny > c.y ? 0.5 : 0);
         const ng = gc + step;
         const prev = g.get(nk);
-        if (prev !== undefined && prev <= ng) continue;
+        if (prev !== undefined && prev <= ng) return;
         g.set(nk, ng);
         came.set(nk, k);
         if (!cells.has(nk)) cells.set(nk, { x: nx, y: ny, z: nz });
         open.push(nk, ng + h(nx, ny, nz));
-      }
+      });
     }
     return null;
   }

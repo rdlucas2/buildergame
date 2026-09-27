@@ -307,8 +307,8 @@ test('built-in examples: place from the library, survive reload, travel in bundl
   await expect(page.locator('#library-panel')).toBeVisible();
   await page.locator('.tab[data-tab="examples"]').click();
   const cards = page.locator('#examples-grid .card');
-  await expect(cards).toHaveCount(5);
-  await expect(cards.locator('.card-title')).toHaveText(['Cottage', 'Farmhouse', 'Modern House', 'Eiffel Tower', 'Arc de Triomphe']);
+  await expect(cards).toHaveCount(6);
+  await expect(cards.locator('.card-title')).toHaveText(['Cottage', 'Farmhouse', 'Modern House', 'Eiffel Tower', 'Arc de Triomphe', 'Rabbit Warren']);
   for (const src of await cards.locator('img.thumb').evaluateAll((imgs) => imgs.map((i) => (i as HTMLImageElement).src))) {
     expect(src.startsWith('data:image/')).toBe(true);
   }

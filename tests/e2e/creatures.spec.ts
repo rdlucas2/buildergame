@@ -87,8 +87,8 @@ test('the Nature panel counts rabbits and releases more at the crosshair', async
   const panel = page.locator('#nature-panel');
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('Rabbits');
-  await expect(panel.locator('.stat', { hasText: 'Alive' })).toContainText(String(before.prey));
-  await expect(panel.locator('#prey-sparkline svg polyline')).toHaveCount(1);
+  await expect(panel.locator('.stat', { hasText: 'Rabbits' })).toContainText(String(before.prey));
+  await expect(panel.locator('#prey-sparkline svg polyline.spark-prey')).toHaveCount(1);
   await page.screenshot({ path: `${SHOTS}/creatures-nature-panel.png` });
   await panel.locator('#release-rabbits').click();
   await expect(panel).toBeHidden();

@@ -41,6 +41,8 @@ export interface EcosystemState {
   history?: Array<[number, number, number]>;
   /** Running totals of births and deaths by cause. */
   tally?: Record<string, number>;
+  /** Seconds until a wolf pack arrives (counts down only while there are no wolves). */
+  packTimer?: number;
 }
 
 export type CreatureSpecies = 'prey' | 'predator';

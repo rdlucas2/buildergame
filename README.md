@@ -9,13 +9,13 @@ to every material, and share what you make as files that anyone can drop into th
   grid, rotate in quarter turns, stack on each other, and can never overlap (voxel-precise collision
   with a green/red preview).
 - **Examples** — the library's Examples tab has ready-made structures to place: a cottage, a
-  farmhouse, a modern house, the Eiffel Tower and the Arc de Triomphe. Editing one saves your own
-  copy; the built-in original never changes. They are defined in code under `src/examples/`.
+  farmhouse, a modern house, the Eiffel Tower, the Arc de Triomphe and a rabbit warren for wild
+  worlds. Editing one saves your own copy; the built-in original never changes. They are defined in code under `src/examples/`.
 - **Wild worlds**: tick "Wild world" when creating a world to get generated ponds and streams,
   grass, and a day/night cycle with pause, 1×, 4× and 16× speed. Grass grows only where sunlight
   reaches the ground, so roofs starve the ground beneath them while open courtyards stay green. The
-  Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky
-  and water.
+  Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky,
+  water and safety from wolves.
 - **Rabbits**: a wild world starts with a herd of rabbits near water.
   - They graze, drink, sleep at night (under a roof if one is near) and raise young when well fed.
   - They die of hunger, thirst or old age.
@@ -23,7 +23,16 @@ to every material, and share what you make as files that anyone can drop into th
     squeeze through 1-high gaps.
   - Aim at a rabbit to see what it is doing and how it is. The Nature panel graphs the population
     and releases more rabbits at the crosshair.
-  - Predators are coming next.
+- **Wolves**: a pack of 3 arrives late on day 1, and a new pack wanders in whenever wolves have died out.
+  - Wolves track rabbits by scent, lie in wait by the water, stalk what they see and pounce in a
+    short sprint. A catch feeds a wolf for about a day.
+  - Rabbits see nearly all around and hear wolves that come close. They run for the nearest place
+    wolves can't follow, and sleep in one when it is near.
+  - Wolves stand 2 blocks tall and leap 2 up. So a **1-high gap** lets rabbits through but not
+    wolves, and **walls 3 blocks high** keep wolves out.
+  - The **Safety** overlay colours every spot where rabbits are safe (teal). The *Rabbit Warren*
+    example is a ready-made safe pen: it is open to the sky so grass still grows inside.
+  - The Nature panel graphs both populations and can release wolves too.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 

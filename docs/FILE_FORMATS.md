@@ -101,7 +101,8 @@ even interleave, as with two L-shapes).
 ### Wild worlds (version 2)
 
 A world created with the **Wild world** option is written as `"version": 2` with an extra
-`ecosystem` block. Plain worlds are still written as version 1, and readers accept both.
+`ecosystem` block. Plain worlds are still written as version 1, and readers accept both. A wild
+world's `ground.size` can be at most 2048.
 
 ```json
 "ecosystem": {
@@ -115,7 +116,8 @@ A world created with the **Wild world** option is written as `"version": 2` with
   "nextCreatureId": 31,
   "rng": 2718281828,
   "history": [[1400, 14, 0], [1410, 15, 0]],
-  "tally": { "born": 17, "hunger": 0, "thirst": 1, "age": 0, "eaten": 0 }
+  "tally": { "born": 17, "hunger": 0, "thirst": 1, "age": 0, "eaten": 0 },
+  "packTimer": 720
 }
 ```
 
@@ -128,6 +130,7 @@ A world created with the **Wild world** option is written as `"version": 2` with
 | `rng` | Optional unsigned 32-bit state of the simulation's random stream, so that a loaded world carries on exactly as it would have. |
 | `history` | Optional population samples `[time, prey, predators]`, taken every 10 simulation seconds. At most the last 1000 samples are kept. |
 | `tally` | Optional running totals: `born`, and deaths by cause (`hunger`, `thirst`, `age` and `eaten`). |
+| `packTimer` | Optional. Simulation seconds until a wolf pack arrives. It counts down only while there are no wolves. When missing, the first pack arrives 211 seconds after the world is loaded. |
 | `biomass` | Optional grass amount per ground cell. It is quantised to `levels` steps (0 bare to 15 full), laid out row by row with index `(x + size/2) + (z + size/2) * size`, where `size` is `ground.size`. It is then run-length encoded like structure voxels. When missing, it is regenerated from the seed. |
 
 Grass grows only on ground cells with no block above them in any placement, and it dies back under
@@ -135,7 +138,8 @@ roofs. Water cells never hold grass.
 
 Creatures move on whole cells. A cell is walkable when the cell below it is solid (the ground or a
 placed block) and there is headroom for the creature's height. Rabbits are 1 block tall. They step up
-1 block, drop up to 3, and wade slowly through water. Only the saved fields above are stored. What each
+1 block, drop up to 3, and wade slowly through water. Wolves (`predator`) are 2 blocks tall. They
+leap up to 2 blocks and drop up to 3. Only the saved fields above are stored. What each
 creature is doing and where it is heading is worked out again after loading.
 
 ## World bundle: `*.world.zip`

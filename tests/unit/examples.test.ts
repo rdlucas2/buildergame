@@ -10,7 +10,7 @@ const get = (id: string): Structure => byId.get(id)!;
 
 describe('built-in examples', () => {
   it('has the requested set with unique, stable example ids', () => {
-    expect(all.map((s) => s.name)).toEqual(['Cottage', 'Farmhouse', 'Modern House', 'Eiffel Tower', 'Arc de Triomphe']);
+    expect(all.map((s) => s.name)).toEqual(['Cottage', 'Farmhouse', 'Modern House', 'Eiffel Tower', 'Arc de Triomphe', 'Rabbit Warren']);
     expect(new Set(all.map((s) => s.id)).size).toBe(all.length);
     for (const s of all) expect(isExampleId(s.id)).toBe(true);
     expect(isExampleId('4b9d0c62-3b6e-4d2e-9a1a-7f6bd0f4c1a1')).toBe(false);

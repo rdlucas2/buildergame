@@ -30,12 +30,15 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
     'Wild worlds',
     [
       ['N', 'Nature panel: the rules, grass cover and overlays'],
-      ['O', 'Cycle overlays: food, blocked sky, water'],
+      ['O', 'Cycle overlays: food, blocked sky, water, safety from wolves'],
       ['T', 'Cycle time speed: pause, 1×, 4×, 16×'],
       ['Food', 'Grass grows only where no block is overhead; roofs starve the ground beneath'],
       ['Rabbits', 'Eat grass, drink at the shore, sleep at night (under a roof if one is near) and breed when well fed'],
       ['Aim at a rabbit', 'See what it is doing and its food, water, energy and health'],
-      ['Nature panel', 'Population graph, and a button to release rabbits at the crosshair'],
+      ['Wolves', 'Arrive late on day 1; they track rabbits by scent, wait by the water, stalk and pounce'],
+      ['Keep rabbits safe', 'Wolves are 2 tall and leap 2 up: a 1-high gap or walls 3 high keep them out'],
+      ['Aim at a wolf', 'See what it is up to: prowling, lying in wait, stalking or pouncing'],
+      ['Nature panel', 'Population graph, and buttons to release rabbits or wolves at the crosshair'],
     ],
   ],
   [
