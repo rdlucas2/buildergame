@@ -32,6 +32,33 @@ export interface EcosystemState {
   seed: number;
   time: number;
   biomass?: Uint8Array;
+  creatures?: CreatureState[];
+  /** Next id to hand out to a newborn creature. */
+  nextCreatureId?: number;
+  /** State of the simulation's random stream, so a reloaded world continues deterministically. */
+  rng?: number;
+  /** Population samples over time: [time, prey, predators]. */
+  history?: Array<[number, number, number]>;
+  /** Running totals of births and deaths by cause. */
+  tally?: Record<string, number>;
+}
+
+export type CreatureSpecies = 'prey' | 'predator';
+
+/** The saved state of one living creature (behaviour and paths are recomputed on load). */
+export interface CreatureState {
+  id: number;
+  species: CreatureSpecies;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  satiety: number;
+  hydration: number;
+  energy: number;
+  health: number;
+  age: number;
+  cooldown: number;
 }
 
 /** A player's world: metadata plus where each structure instance sits. */

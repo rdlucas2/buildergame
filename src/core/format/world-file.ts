@@ -16,6 +16,24 @@ export const WORLD_BUNDLE_EXTENSION = '.world.zip';
 
 const int = z.number().int();
 const coord = int.min(-1_000_000).max(1_000_000);
+const unit = z.number().min(0).max(1);
+/** More creatures than any population cap allows, so a file can't make the game do unbounded work. */
+export const MAX_CREATURES = 5000;
+
+const CreatureSchema = z.object({
+  id: int.min(1),
+  species: z.enum(['prey', 'predator']),
+  x: z.number().min(-1_000_000).max(1_000_000),
+  y: int.min(0).max(1_000_000),
+  z: z.number().min(-1_000_000).max(1_000_000),
+  heading: z.number().min(-100).max(100),
+  satiety: unit,
+  hydration: unit,
+  energy: unit,
+  health: unit,
+  age: z.number().min(0).max(1e12),
+  cooldown: z.number().min(0).max(1e12),
+});
 
 export const WorldFileSchema = z.object({
   format: z.literal(WORLD_FORMAT),
@@ -50,6 +68,11 @@ export const WorldFileSchema = z.object({
           data: z.string(),
         })
         .optional(),
+      creatures: z.array(CreatureSchema).max(MAX_CREATURES).optional(),
+      nextCreatureId: int.min(1).optional(),
+      rng: int.min(0).max(0xffffffff).optional(),
+      history: z.array(z.tuple([z.number().min(0), int.min(0), int.min(0)])).max(5000).optional(),
+      tally: z.record(z.string().max(32), int.min(0)).optional(),
     })
     .optional(),
 });
@@ -81,6 +104,11 @@ export function encodeWorld(world: World, structureName: (id: string) => string 
 
 function encodeEcosystem(e: EcosystemState): NonNullable<WorldFile['ecosystem']> {
   const out: NonNullable<WorldFile['ecosystem']> = { seed: e.seed >>> 0, time: e.time };
+  if (e.creatures) out.creatures = e.creatures.map((c) => ({ ...c }));
+  if (e.nextCreatureId !== undefined) out.nextCreatureId = e.nextCreatureId;
+  if (e.rng !== undefined) out.rng = e.rng >>> 0;
+  if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
+  if (e.tally) out.tally = { ...e.tally };
   if (e.biomass) {
     const q = new Uint16Array(e.biomass.length);
     for (let i = 0; i < q.length; i++) q[i] = Math.round(e.biomass[i] / BIOMASS_STEP);
@@ -91,6 +119,18 @@ function encodeEcosystem(e: EcosystemState): NonNullable<WorldFile['ecosystem']>
 
 function decodeEcosystem(e: NonNullable<WorldFile['ecosystem']>, groundSize: number): EcosystemState {
   const out: EcosystemState = { seed: e.seed, time: e.time };
+  if (e.creatures) {
+    const ids = new Set<number>();
+    for (const c of e.creatures) {
+      if (ids.has(c.id)) throw new FileFormatError(`Invalid world file: duplicate creature id ${c.id}`);
+      ids.add(c.id);
+    }
+    out.creatures = e.creatures.map((c) => ({ ...c }));
+  }
+  if (e.nextCreatureId !== undefined) out.nextCreatureId = e.nextCreatureId;
+  if (e.rng !== undefined) out.rng = e.rng;
+  if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
+  if (e.tally) out.tally = { ...e.tally };
   if (e.biomass) {
     let q: Uint16Array;
     try {

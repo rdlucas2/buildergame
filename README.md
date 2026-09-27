@@ -15,7 +15,15 @@ to every material, and share what you make as files that anyone can drop into th
   grass, and a day/night cycle with pause, 1×, 4× and 16× speed. Grass grows only where sunlight
   reaches the ground, so roofs starve the ground beneath them while open courtyards stay green. The
   Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky
-  and water. Creatures that eat, drink and hunt are coming next.
+  and water.
+- **Rabbits**: a wild world starts with a herd of rabbits near water.
+  - They graze, drink, sleep at night (under a roof if one is near) and raise young when well fed.
+  - They die of hunger, thirst or old age.
+  - They find their way around, through and over what you build: they can hop up one block and
+    squeeze through 1-high gaps.
+  - Aim at a rabbit to see what it is doing and how it is. The Nature panel graphs the population
+    and releases more rabbits at the crosshair.
+  - Predators are coming next.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 

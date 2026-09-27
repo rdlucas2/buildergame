@@ -107,7 +107,15 @@ A world created with the **Wild world** option is written as `"version": 2` with
 "ecosystem": {
   "seed": 3141592653,
   "time": 1404.2,
-  "biomass": { "encoding": "rle-u16-base64", "levels": 16, "data": "…" }
+  "biomass": { "encoding": "rle-u16-base64", "levels": 16, "data": "…" },
+  "creatures": [
+    { "id": 3, "species": "prey", "x": -22.5, "y": 0, "z": -11.5, "heading": 1.571,
+      "satiety": 0.84, "hydration": 0.62, "energy": 0.9, "health": 1, "age": 812.4, "cooldown": 0 }
+  ],
+  "nextCreatureId": 31,
+  "rng": 2718281828,
+  "history": [[1400, 14, 0], [1410, 15, 0]],
+  "tally": { "born": 17, "hunger": 0, "thirst": 1, "age": 0, "eaten": 0 }
 }
 ```
 
@@ -115,10 +123,20 @@ A world created with the **Wild world** option is written as `"version": 2` with
 | --- | --- |
 | `seed` | Unsigned 32-bit seed. The terrain, meaning ponds and streams, is regenerated from it and is not stored. |
 | `time` | Simulation seconds since the world began. `0` is midnight of day 1, and one day lasts 480 seconds. |
+| `creatures` | Optional list of living creatures. `species` is `prey` (rabbits) or `predator`. `x`/`z` are world positions (a creature in cell 5 stands at 5.5), `y` is the height of the cell it stands in (`0` on the ground). `heading` is in radians, where 0 faces +z. `satiety`, `hydration`, `energy` and `health` run from 0 to 1. `age` and `cooldown`, the time until it can breed again, are in simulation seconds. Ids must be unique. At most 5000 creatures. When the list is missing, as in files written before creatures existed, the world gets a starter herd. An empty list means that everyone has died. |
+| `nextCreatureId` | Optional. The id the next newborn gets. |
+| `rng` | Optional unsigned 32-bit state of the simulation's random stream, so that a loaded world carries on exactly as it would have. |
+| `history` | Optional population samples `[time, prey, predators]`, taken every 10 simulation seconds. At most the last 1000 samples are kept. |
+| `tally` | Optional running totals: `born`, and deaths by cause (`hunger`, `thirst`, `age` and `eaten`). |
 | `biomass` | Optional grass amount per ground cell. It is quantised to `levels` steps (0 bare to 15 full), laid out row by row with index `(x + size/2) + (z + size/2) * size`, where `size` is `ground.size`. It is then run-length encoded like structure voxels. When missing, it is regenerated from the seed. |
 
 Grass grows only on ground cells with no block above them in any placement, and it dies back under
 roofs. Water cells never hold grass.
+
+Creatures move on whole cells. A cell is walkable when the cell below it is solid (the ground or a
+placed block) and there is headroom for the creature's height. Rabbits are 1 block tall. They step up
+1 block, drop up to 3, and wade slowly through water. Only the saved fields above are stored. What each
+creature is doing and where it is heading is worked out again after loading.
 
 ## World bundle: `*.world.zip`
 

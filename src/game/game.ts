@@ -7,7 +7,7 @@ import { getMaterial } from '../core/materials';
 import type { Vec3 } from '../core/math';
 import type { Rotation } from '../core/rotation';
 import { EmptyStructureError, structureBlockCount, type Structure } from '../core/structure';
-import { createWorld, referencedStructureIds, touchWorld, type Placement, type World } from '../core/world';
+import { createWorld, referencedStructureIds, touchWorld, type CreatureSpecies, type Placement, type World } from '../core/world';
 import { buildExampleStructures, exampleDescription } from '../examples';
 import { buildStructureGeometry, StructureGeometryCache } from '../render/structure-geometry';
 import { SceneHost } from '../render/scene';
@@ -26,7 +26,7 @@ import { toast } from '../ui/toast';
 import { openWorldPanel } from '../ui/world-panel';
 import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
 import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
-import { EcosystemController, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
+import { EcosystemController, type CreatureInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
 import { START_TIME, type Speed } from '../sim/clock';
 import { randomSeed } from '../sim/rng';
 import type { Overlay } from '../render/terrain-view';
@@ -113,6 +113,7 @@ export class Game {
     this.worldMode.onChange = () => this.scheduleSave();
     this.host.scene.add(this.worldMode.group);
     this.eco = new EcosystemController(this.host, this.worldMode, library, container);
+    this.eco.onActivity = () => this.scheduleSave();
     this.eco.attach(world);
     this.applyWorldPose(world);
 
@@ -843,7 +844,10 @@ export class Game {
       this.hud.setHint('Left click: place · R: rotate · [ / ]: lower / raise · Right click or Esc: cancel');
     } else {
       const h = wm.hoveredPlacement();
-      if (h) {
+      const creature = this.eco.hoverText();
+      if (creature) {
+        lines.push(creature);
+      } else if (h) {
         const size = h.structure.voxels.size;
         lines.push(`Looking at "${h.structure.name}" (${size.x}×${size.y}×${size.z}, ${structureBlockCount(h.structure)} blocks)`);
         this.hud.setHint('X: remove · G: move · Tab: library · B: build a structure');
@@ -921,6 +925,10 @@ export class Game {
       ecoSpeed: (sp) => g.eco.setSpeed(sp),
       ecoOverlay: (o) => g.eco.setOverlay(o),
       ecoNearestWater: (x, z) => g.eco.nearestWater(x, z),
+      ecoCreatures: () => g.eco.creatures(),
+      ecoRelease: (species, x, z, count) => g.eco.release(species, x, z, count),
+      ecoReleaseAtCrosshair: (count) => g.eco.releaseAtCrosshair('prey', count),
+      ecoHovered: () => g.eco.hovered()?.id ?? null,
       switchWorld: (id) => g.switchWorld(id),
       flushSave: () => g.flushSave(),
       exportWorldBundleBase64: () => bytesToBase64(g.encodeWorldBundle()),
@@ -1004,6 +1012,12 @@ export interface GameDebug {
   ecoSpeed(speed: Speed): void;
   ecoOverlay(overlay: Overlay): void;
   ecoNearestWater(x: number, z: number): { x: number; z: number } | null;
+  ecoCreatures(): CreatureInfo[];
+  /** Releases up to `count` creatures around cell (x, z); returns how many appeared. */
+  ecoRelease(species: CreatureSpecies, x: number, z: number, count: number): number;
+  ecoReleaseAtCrosshair(count?: number): number;
+  /** Id of the creature under the crosshair, if any. */
+  ecoHovered(): number | null;
   switchWorld(id: string): Promise<boolean>;
   flushSave(): Promise<void>;
   exportWorldBundleBase64(): string;
