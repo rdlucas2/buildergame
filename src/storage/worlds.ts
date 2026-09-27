@@ -6,6 +6,7 @@ export interface WorldSummary {
   name: string;
   updatedAt: string;
   placements: number;
+  wild: boolean;
 }
 
 interface Meta {
@@ -38,7 +39,7 @@ export class WorldStore {
 
   list(): WorldSummary[] {
     return [...this.worlds.values()]
-      .map((w) => ({ id: w.id, name: w.name, updatedAt: w.updatedAt, placements: w.placements.length }))
+      .map((w) => ({ id: w.id, name: w.name, updatedAt: w.updatedAt, placements: w.placements.length, wild: !!w.ecosystem }))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
 

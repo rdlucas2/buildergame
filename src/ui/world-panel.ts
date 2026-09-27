@@ -47,7 +47,7 @@ export function openWorldPanel(state: WorldPanelState, actions: WorldActions): P
       el(
         'div',
         { class: `list-row${active ? ' active' : ''}`, dataset: { worldId: w.id } },
-        el('div', { class: 'grow' }, el('div', { class: 'card-title' }, w.name || 'Untitled', active ? el('span', { class: 'tag' }, 'current') : null), el('div', { class: 'muted small' }, `${w.placements} placement${w.placements === 1 ? '' : 's'} · ${formatDate(w.updatedAt)}`)),
+        el('div', { class: 'grow' }, el('div', { class: 'card-title' }, w.name || 'Untitled', w.wild ? el('span', { class: 'tag wild' }, 'wild') : null, active ? el('span', { class: 'tag' }, 'current') : null), el('div', { class: 'muted small' }, `${w.placements} placement${w.placements === 1 ? '' : 's'} · ${formatDate(w.updatedAt)}`)),
         active ? null : el('button', { class: 'btn small', onclick: () => actions.onOpen(w.id), dataset: { action: 'open' } }, 'Open'),
         el('button', { class: 'btn small danger-text', onclick: () => actions.onDelete(w.id), dataset: { action: 'delete' } }, 'Delete'),
       ),

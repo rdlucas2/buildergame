@@ -180,7 +180,7 @@ body.touch .key-hint, body.touch .hud-hint { display: none; }
 body.touch .top-btn { padding: 8px 11px; }
 body.touch .hud-topright { flex-wrap: wrap; justify-content: flex-end; max-width: 58vw; right: calc(12px + env(safe-area-inset-right)); top: calc(10px + env(safe-area-inset-top)); }
 body.touch .hud-topleft { left: calc(12px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top)); max-width: 40vw; }
-body.touch .hud-mode { font-size: 13px; }
+body.touch .hud-mode { font-size: 13px; width: auto; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.touch .hud-status { font-size: 11px; width: auto; }
 /* The hotbar sits between the thumbstick and the thumb buttons. */
 body.touch .hud-bottom {
@@ -208,3 +208,38 @@ body.touch .crosshair { width: 22px; height: 22px; }
 @media (max-height: 430px) and (orientation: landscape) {
   body.touch .hud-status { display: none; }
 }
+
+/* ---------- Wild worlds ---------- */
+.eco-strip {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 4;
+  display: flex; align-items: center; gap: 8px; padding: 4px 5px 4px 12px; border-radius: 999px;
+  background: rgba(15,18,24,0.66); border: 1px solid var(--border); color: #fff; font-size: 13px;
+  font-variant-numeric: tabular-nums; pointer-events: auto; user-select: none; white-space: nowrap;
+}
+.eco-strip.night { background: rgba(8,12,24,0.8); }
+.eco-icon { font-size: 15px; width: 16px; text-align: center; }
+.eco-clock { min-width: 96px; }
+.eco-speeds { display: flex; gap: 2px; background: rgba(255,255,255,0.06); border-radius: 999px; padding: 2px; }
+.eco-speed, .eco-nature { font: inherit; font-size: 12px; cursor: pointer; border: none; color: #dfe6f0; background: transparent; padding: 5px 9px; border-radius: 999px; }
+.eco-speed.active { background: var(--accent); color: #061225; font-weight: 700; }
+.eco-nature { background: rgba(61,220,132,0.22); color: #bff5d6; font-weight: 600; }
+.eco-nature:hover, .eco-speed:hover:not(.active) { background: rgba(255,255,255,0.12); }
+@media (max-width: 1500px) { .eco-strip { top: 58px; } }
+body.touch .eco-strip { top: calc(52px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); transform: none; font-size: 12px; }
+body.touch .eco-speed, body.touch .eco-nature { padding: 7px 9px; }
+body.touch.wild .toasts { top: calc(96px + env(safe-area-inset-top)); }
+@media (orientation: portrait) {
+  body.touch .eco-strip { top: calc(160px + env(safe-area-inset-top)); }
+  body.touch.wild .toasts { top: calc(204px + env(safe-area-inset-top)); }
+}
+
+.check-field { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 4px; cursor: pointer; }
+.check-field input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent-2); flex: 0 0 auto; }
+.check-field > span { display: flex; flex-direction: column; gap: 3px; }
+.overlay-list { display: flex; flex-direction: column; gap: 6px; }
+.overlay-option { text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 2px solid transparent; background: var(--panel-2); color: var(--text); font: inherit; }
+.overlay-option.active { border-color: var(--accent-2); }
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0; }
+.stat { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+.stat-value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.tag.wild { background: rgba(74,163,255,0.2); color: #9fd0ff; }

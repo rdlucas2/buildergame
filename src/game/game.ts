@@ -16,7 +16,7 @@ import { createVoxelMaterials, type VoxelMaterials } from '../render/voxel-mater
 import { downloadBlob, downloadBytes, downloadText, pickFiles, readFileBytes, readFileText } from '../storage/files';
 import { StructureLibrary } from '../storage/library';
 import { WorldStore } from '../storage/worlds';
-import { confirmDialog, promptDialog } from '../ui/dialogs';
+import { confirmDialog, newWorldDialog, promptDialog } from '../ui/dialogs';
 import { openHelp } from '../ui/help';
 import { Hud } from '../ui/hud';
 import { openLibraryPanel, type LibraryTab } from '../ui/library-panel';
@@ -26,6 +26,10 @@ import { toast } from '../ui/toast';
 import { openWorldPanel } from '../ui/world-panel';
 import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
 import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
+import { EcosystemController, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
+import { START_TIME, type Speed } from '../sim/clock';
+import { randomSeed } from '../sim/rng';
+import type { Overlay } from '../render/terrain-view';
 import { DEFAULT_HOTBAR, StructureMode } from './structure-mode';
 import { WorldMode } from './world-mode';
 
@@ -54,6 +58,8 @@ export class Game {
   private frameWaiters: Array<() => void> = [];
   private libraryTab: LibraryTab = 'mine';
   readonly touch: TouchControls;
+  readonly eco: EcosystemController;
+  private ecoSaveTimer = 0;
   /** On-screen touch controls are active (no pointer lock, no click-to-start overlay). */
   touchMode = false;
   /** `?touch=1` or `?touch=0` pins the mode; otherwise it follows the last input device used. */
@@ -106,6 +112,8 @@ export class Game {
     this.worldMode = new WorldMode(world, library, this.cache, this.materials);
     this.worldMode.onChange = () => this.scheduleSave();
     this.host.scene.add(this.worldMode.group);
+    this.eco = new EcosystemController(this.host, this.worldMode, library, container);
+    this.eco.attach(world);
     this.applyWorldPose(world);
 
     this.bindInput();
@@ -139,6 +147,15 @@ export class Game {
     if (this.structureMode) this.structureMode.update(this.host.camera);
     else this.worldMode.update(this.host.camera);
     this.updateHold(dt);
+    this.eco.frame(dt, !!this.structureMode);
+    if (this.eco.active) {
+      // Wild worlds change on their own, so save them regularly as well as on edits.
+      this.ecoSaveTimer += dt;
+      if (this.ecoSaveTimer > 30) {
+        this.ecoSaveTimer = 0;
+        void this.flushSave();
+      }
+    }
     this.hudTimer += dt;
     if (this.hudTimer > 0.1) {
       this.hudTimer = 0;
@@ -425,6 +442,20 @@ export class Game {
         if (p) toast(`Removed ${this.library.get(p.structureId)?.name ?? 'structure'} ${this.say('(Ctrl+Z to undo)', '(Undo brings it back)')}`, 'info', 1800);
         return !!p;
       }
+      case 'KeyN':
+        if (!this.eco.active) return false;
+        this.eco.openPanel();
+        return true;
+      case 'KeyO':
+        if (!this.eco.active) return false;
+        toast(`Overlay: ${this.eco.cycleOverlay()}`, 'info', 1200);
+        return true;
+      case 'KeyT': {
+        if (!this.eco.active) return false;
+        const sp = this.eco.cycleSpeed();
+        toast(sp === 0 ? 'Time paused' : `Time speed ${sp}×`, 'info', 1200);
+        return true;
+      }
       case 'KeyG': {
         const p = wm.pickUpHovered();
         if (p) toast(this.say('Moving structure: click to drop it, Esc to put it back', 'Moving structure: tap Place to drop it, Cancel to put it back'), 'info', 2200);
@@ -632,13 +663,13 @@ export class Game {
         {
           onOpen: (id) => void this.switchWorld(id).then(() => closePanel()),
           onNew: async () => {
-            const name = await promptDialog('New world', { label: 'World name', value: `World ${this.worlds.list().length + 1}`, okLabel: 'Create' });
-            if (name === null) return render();
-            await this.createWorld(name.trim() || 'Untitled world');
+            const r = await newWorldDialog(`World ${this.worlds.list().length + 1}`);
+            if (r === null) return render();
+            await this.createWorld(r.name.trim() || 'Untitled world', { wild: r.wild });
             closePanel();
           },
           onRename: async () => {
-            const w = this.worldMode.world;
+            const w = this.currentWorld();
             const name = await promptDialog('Rename world', { label: 'World name', value: w.name, okLabel: 'Rename' });
             if (name === null) return render();
             this.worldMode.load({ ...w, name: name.trim() || w.name });
@@ -667,7 +698,7 @@ export class Game {
           onSetAuthor: (name) => void this.worlds.setAuthor(name.trim()),
           onSetSpawn: async () => {
             const pose = this.controls.getPose();
-            this.worldMode.load({ ...this.worldMode.world, spawn: { position: pose.position, yaw: pose.yaw, pitch: pose.pitch } });
+            this.worldMode.load({ ...this.currentWorld(), spawn: { position: pose.position, yaw: pose.yaw, pitch: pose.pitch } });
             await this.flushSave();
             toast('Spawn point set to where you are.', 'success');
             render();
@@ -680,8 +711,9 @@ export class Game {
 
   // ---- worlds ----------------------------------------------------------------------------
 
-  async createWorld(name: string): Promise<World> {
-    const w = createWorld({ name });
+  /** Creates and opens a new world. Wild worlds get terrain, grass and day/night from a fresh seed. */
+  async createWorld(name: string, opts: { wild?: boolean; seed?: number } = {}): Promise<World> {
+    const w = createWorld({ name, ...(opts.wild ? { ecosystem: { seed: opts.seed ?? randomSeed(), time: START_TIME } } : {}) });
     await this.worlds.save(w);
     await this.switchWorld(w.id);
     return w;
@@ -694,6 +726,8 @@ export class Game {
     if (this.structureMode) this.leaveStructureMode();
     await this.worlds.setActiveWorldId(id);
     const dropped = this.worldMode.load(w);
+    this.eco.attach(w);
+    this.ecoSaveTimer = 0;
     if (dropped.length) toast(`${dropped.length} placement${dropped.length === 1 ? '' : 's'} referenced structures that are not in your library and were dropped.`, 'error', 6000);
     this.applyWorldPose(w);
     this.refreshHudChrome();
@@ -715,9 +749,16 @@ export class Game {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    const w = this.worldMode.world;
+    const w = this.currentWorld();
     await this.worlds.save(w);
     await this.worlds.setSetting(`pose:${w.id}`, this.controls.getPose());
+  }
+
+  /** The current world including the live ecosystem state (for saving and exporting). */
+  currentWorld(): World {
+    const w = this.worldMode.world;
+    const eco = this.eco?.snapshot();
+    return eco ? { ...w, ecosystem: eco } : w;
   }
 
   exportWorld(): void {
@@ -727,7 +768,7 @@ export class Game {
   }
 
   encodeWorldBundle(): Uint8Array {
-    const w = touchWorld(this.worldMode.world);
+    const w = touchWorld(this.currentWorld());
     const structures = referencedStructureIds(w).map((id) => this.library.get(id)).filter((s): s is Structure => !!s);
     return encodeWorldBundle({ world: w, structures });
   }
@@ -768,7 +809,7 @@ export class Game {
       this.hud.setStructureButton('Save structure', 'Enter');
       this.hud.setHint('Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave');
     } else {
-      this.hud.setMode(`World: ${this.worldMode.world.name}`);
+      this.hud.setMode(`${this.eco.active ? 'Wild world' : 'World'}: ${this.worldMode.world.name}`);
       this.hud.setStructureButton('Build structure', 'B');
       this.hud.setHint('Tab: library · B: build a structure · M: worlds · H: help');
     }
@@ -873,7 +914,13 @@ export class Game {
       hoveredPlacement: () => g.worldMode.hoveredPlacement()?.placement ?? null,
       world: () => JSON.parse(JSON.stringify(g.worldMode.world)) as World,
       listWorlds: () => g.worlds.list(),
-      createWorld: (name) => g.createWorld(name).then((w) => w.id),
+      createWorld: (name, wild, seed) => g.createWorld(name, { wild: !!wild, ...(seed !== undefined ? { seed } : {}) }).then((w) => w.id),
+      eco: () => g.eco.info(),
+      ecoCell: (x, z) => g.eco.cell(x, z),
+      ecoAdvance: (seconds) => g.eco.advance(seconds),
+      ecoSpeed: (sp) => g.eco.setSpeed(sp),
+      ecoOverlay: (o) => g.eco.setOverlay(o),
+      ecoNearestWater: (x, z) => g.eco.nearestWater(x, z),
       switchWorld: (id) => g.switchWorld(id),
       flushSave: () => g.flushSave(),
       exportWorldBundleBase64: () => bytesToBase64(g.encodeWorldBundle()),
@@ -948,7 +995,15 @@ export interface GameDebug {
   hoveredPlacement(): Placement | null;
   world(): World;
   listWorlds(): Array<{ id: string; name: string; updatedAt: string; placements: number }>;
-  createWorld(name: string): Promise<string>;
+  /** Creates and opens a world; `wild` adds terrain, grass and day/night (optionally from a fixed seed). */
+  createWorld(name: string, wild?: boolean, seed?: number): Promise<string>;
+  eco(): EcosystemInfo | null;
+  ecoCell(x: number, z: number): EcosystemCell | null;
+  /** Runs the ecosystem forward immediately by this many simulation seconds. */
+  ecoAdvance(seconds: number): void;
+  ecoSpeed(speed: Speed): void;
+  ecoOverlay(overlay: Overlay): void;
+  ecoNearestWater(x: number, z: number): { x: number; z: number } | null;
   switchWorld(id: string): Promise<boolean>;
   flushSave(): Promise<void>;
   exportWorldBundleBase64(): string;

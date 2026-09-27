@@ -11,6 +11,11 @@ to every material, and share what you make as files that anyone can drop into th
 - **Examples** — the library's Examples tab has ready-made structures to place: a cottage, a
   farmhouse, a modern house, the Eiffel Tower and the Arc de Triomphe. Editing one saves your own
   copy; the built-in original never changes. They are defined in code under `src/examples/`.
+- **Wild worlds**: tick "Wild world" when creating a world to get generated ponds and streams,
+  grass, and a day/night cycle with pause, 1×, 4× and 16× speed. Grass grows only where sunlight
+  reaches the ground, so roofs starve the ground beneath them while open courtyards stay green. The
+  Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky
+  and water. Creatures that eat, drink and hunt are coming next.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 

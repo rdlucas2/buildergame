@@ -27,6 +27,15 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
     ],
   ],
   [
+    'Wild worlds',
+    [
+      ['N', 'Nature panel: the rules, grass cover and overlays'],
+      ['O', 'Cycle overlays: food, blocked sky, water'],
+      ['T', 'Cycle time speed: pause, 1×, 4×, 16×'],
+      ['Food', 'Grass grows only where no block is overhead; roofs starve the ground beneath'],
+    ],
+  ],
+  [
     'Touch screens',
     [
       ['Left stick', 'Move; push it all the way to go faster'],
