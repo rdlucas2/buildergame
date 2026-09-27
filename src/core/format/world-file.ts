@@ -11,6 +11,11 @@ export const WORLD_FORMAT_VERSION = 2;
 /** Biomass is stored quantised to this many levels so that large even areas compress well. */
 export const BIOMASS_LEVELS = 16;
 const BIOMASS_STEP = 255 / (BIOMASS_LEVELS - 1);
+/**
+ * Largest ground a wild world may have. Its simulation keeps several grids with one entry per ground
+ * cell, and position keys assume coordinates within ±2048.
+ */
+export const MAX_WILD_GROUND = 2048;
 export const WORLD_FILE_EXTENSION = '.world.json';
 export const WORLD_BUNDLE_EXTENSION = '.world.zip';
 
@@ -73,6 +78,7 @@ export const WorldFileSchema = z.object({
       rng: int.min(0).max(0xffffffff).optional(),
       history: z.array(z.tuple([z.number().min(0), int.min(0), int.min(0)])).max(5000).optional(),
       tally: z.record(z.string().max(32), int.min(0)).optional(),
+      packTimer: z.number().min(0).max(1e9).optional(),
     })
     .optional(),
 });
@@ -109,6 +115,7 @@ function encodeEcosystem(e: EcosystemState): NonNullable<WorldFile['ecosystem']>
   if (e.rng !== undefined) out.rng = e.rng >>> 0;
   if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
   if (e.tally) out.tally = { ...e.tally };
+  if (e.packTimer !== undefined) out.packTimer = Math.max(0, e.packTimer);
   if (e.biomass) {
     const q = new Uint16Array(e.biomass.length);
     for (let i = 0; i < q.length; i++) q[i] = Math.round(e.biomass[i] / BIOMASS_STEP);
@@ -131,6 +138,7 @@ function decodeEcosystem(e: NonNullable<WorldFile['ecosystem']>, groundSize: num
   if (e.rng !== undefined) out.rng = e.rng;
   if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
   if (e.tally) out.tally = { ...e.tally };
+  if (e.packTimer !== undefined) out.packTimer = e.packTimer;
   if (e.biomass) {
     let q: Uint16Array;
     try {
@@ -184,7 +192,10 @@ export function decodeWorld(json: unknown): DecodedWorld {
       rotation: p.rotation,
     })),
   };
-  if (f.ecosystem) world.ecosystem = decodeEcosystem(f.ecosystem, f.ground.size);
+  if (f.ecosystem) {
+    if (f.ground.size > MAX_WILD_GROUND) throw new FileFormatError(`Invalid world file: a wild world's ground can be at most ${MAX_WILD_GROUND} cells across`);
+    world.ecosystem = decodeEcosystem(f.ecosystem, f.ground.size);
+  }
   return { world, structureRefs: f.structures.map((s) => ({ ...s })) };
 }
 

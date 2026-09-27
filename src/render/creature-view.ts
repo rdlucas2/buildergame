@@ -6,7 +6,8 @@ import { hash3 } from '../sim/rng';
 import { buildStructureGeometry } from './structure-geometry';
 
 /** Size of one model voxel in world cells. */
-const MODEL_SCALE = 0.1;
+const RABBIT_SCALE = 0.1;
+const WOLF_SCALE = 0.09;
 const INITIAL_CAPACITY = 64;
 const FADE_SECONDS = 3;
 
@@ -29,15 +30,44 @@ function rabbitGeometry(): BufferGeometry {
   // Ears.
   b.fill(1, 6, 5, 1, 7, 5, fur).fill(3, 6, 5, 3, 7, 5, fur);
   b.set(1, 6, 6, 'pink').set(3, 6, 6, 'pink');
-  const s = b.build({ id: 'creature-rabbit', name: 'Rabbit' });
+  return modelGeometry(b, 'Rabbit', RABBIT_SCALE);
+}
+
+/** A voxel wolf facing +z, two cells tall to its ears. White fur is tinted per instance. */
+function wolfGeometry(): BufferGeometry {
+  const b = new StructureBuilder({ x: 6, y: 14, z: 18 });
+  const fur = 'white';
+  // Legs.
+  for (const x of [0, 4]) for (const z of [2, 11]) b.fill(x, 0, z, x + 1, 4, z + 1, fur);
+  // Body with a paler belly, chest and neck.
+  b.fill(0, 5, 2, 5, 9, 12, fur);
+  b.fill(1, 5, 4, 4, 5, 10, 'snow');
+  b.fill(1, 8, 11, 4, 11, 13, fur);
+  // Head, snout, nose, eyes and ears.
+  b.fill(1, 9, 13, 4, 12, 15, fur);
+  b.fill(2, 9, 16, 3, 10, 17, 'snow');
+  b.fill(2, 10, 17, 3, 10, 17, 'black');
+  b.set(1, 11, 15, 'yellow').set(4, 11, 15, 'yellow');
+  b.fill(1, 13, 13, 1, 13, 14, fur).fill(4, 13, 13, 4, 13, 14, fur);
+  // Tail, drooping behind.
+  b.fill(2, 7, 1, 3, 9, 1, fur).fill(2, 6, 0, 3, 8, 0, fur);
+  return modelGeometry(b, 'Wolf', WOLF_SCALE);
+}
+
+/** Greedy-meshes a model built in voxels, centred on x and z, standing on y = 0, scaled to cells. */
+function modelGeometry(b: StructureBuilder, name: string, scale: number): BufferGeometry {
+  const s = b.build({ id: `creature-${name.toLowerCase()}`, name });
   const g = buildStructureGeometry(s).opaque!;
-  g.translate(-2.5, 0, -4);
-  g.scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
+  g.translate(-s.voxels.size.x / 2, 0, -s.voxels.size.z / 2);
+  g.scale(scale, scale, scale);
   return g;
 }
 
-/** Fur colours for rabbits: mostly browns and greys, the odd white one. */
-const RABBIT_COATS = ['#a47b55', '#8e6a4c', '#b89572', '#9a948c', '#7d756c', '#c7b39a', '#f0ece6'].map((c) => new Color(c));
+/** Fur colours: rabbits are mostly browns and greys with the odd white one; wolves grey to brown. */
+const COATS: Record<CreatureSpecies, Color[]> = {
+  prey: ['#a47b55', '#8e6a4c', '#b89572', '#9a948c', '#7d756c', '#c7b39a', '#f0ece6'].map((c) => new Color(c)),
+  predator: ['#8f8f8f', '#6e6a66', '#a39c92', '#57514b', '#c2beb6', '#7a6a58'].map((c) => new Color(c)),
+};
 
 interface SpeciesMesh {
   mesh: InstancedMesh;
@@ -60,6 +90,7 @@ export class CreatureView {
   constructor() {
     this.group.name = 'creatures';
     this.meshes.set('prey', this.createMesh(rabbitGeometry(), INITIAL_CAPACITY));
+    this.meshes.set('predator', this.createMesh(wolfGeometry(), 8));
   }
 
   private createMesh(geometry: BufferGeometry, capacity: number): SpeciesMesh {
@@ -96,7 +127,8 @@ export class CreatureView {
         if (c.species !== species) continue;
         this.place(c, alpha);
         sm.mesh.setMatrixAt(i, this.tmp.matrix);
-        const coat = RABBIT_COATS[hash3(c.id, 3, 5) % RABBIT_COATS.length];
+        const coats = COATS[species];
+        const coat = coats[hash3(c.id, 3, 5) % coats.length];
         this.color.copy(coat);
         if (c.deadFor >= 0) this.color.multiplyScalar(0.7);
         sm.mesh.setColorAt(i, this.color);
@@ -113,15 +145,15 @@ export class CreatureView {
     const z = c.pz + (c.z - c.pz) * alpha;
     let y = c.py + (c.y - c.py) * alpha;
     const t = this.tmp;
-    const young = Math.min(1, 0.55 + c.age / 900);
+    const young = Math.min(1, 0.55 + c.age / (c.species === 'prey' ? 900 : 1600));
     t.rotation.set(0, c.heading, 0);
     if (c.deadFor >= 0) {
       const k = Math.min(1, c.deadFor / FADE_SECONDS);
       t.rotation.set(0, c.heading, Math.PI / 2);
       y -= k * 0.5;
     } else if (c.x !== c.px || c.z !== c.pz || c.y !== c.py) {
-      // A hop per cell or so, driven by position so it stays in step with the movement.
-      y += Math.abs(Math.sin((x + z) * 2.2)) * 0.22;
+      // Rabbits hop about once a cell; wolves lope with a lower, longer stride.
+      y += c.species === 'prey' ? Math.abs(Math.sin((x + z) * 2.2)) * 0.22 : Math.abs(Math.sin((x + z) * 1.3)) * 0.1;
     }
     t.position.set(x, y + 0.001, z);
     t.scale.setScalar(young);

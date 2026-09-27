@@ -5,6 +5,7 @@ import { buildCottage } from './cottage';
 import { buildEiffelTower } from './eiffel-tower';
 import { buildFarmhouse } from './farmhouse';
 import { buildModernHouse } from './modern-house';
+import { buildRabbitWarren } from './rabbit-warren';
 
 /** Ids of built-in examples all start with this prefix. */
 export const EXAMPLE_ID_PREFIX = 'example-';
@@ -24,6 +25,12 @@ export const EXAMPLES: readonly ExampleDef[] = [
   { id: 'example-modern-house', name: 'Modern House', description: 'Glass ground floor, cantilevered upper floor, deck and pool.', build: buildModernHouse },
   { id: 'example-eiffel-tower', name: 'Eiffel Tower', description: 'Iron lattice tower on four arched legs, about 1:2.75 scale.', build: buildEiffelTower },
   { id: 'example-arc-de-triomphe', name: 'Arc de Triomphe', description: 'Triumphal arch with reliefs and an eternal flame, about 1:1 scale.', build: buildArcDeTriomphe },
+  {
+    id: 'example-rabbit-warren',
+    name: 'Rabbit Warren',
+    description: 'Walled pen for wild worlds: 3-high walls and 1-high gaps keep wolves out, open sky keeps grass growing.',
+    build: buildRabbitWarren,
+  },
 ];
 
 export function isExampleId(id: string): boolean {

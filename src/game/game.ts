@@ -927,7 +927,8 @@ export class Game {
       ecoNearestWater: (x, z) => g.eco.nearestWater(x, z),
       ecoCreatures: () => g.eco.creatures(),
       ecoRelease: (species, x, z, count) => g.eco.release(species, x, z, count),
-      ecoReleaseAtCrosshair: (count) => g.eco.releaseAtCrosshair('prey', count),
+      ecoReleaseAtCrosshair: (count, species = 'prey') => g.eco.releaseAtCrosshair(species, count),
+      ecoSafe: (x, y, z) => g.eco.ecosystem?.safety.isSafe(x, y, z) ?? false,
       ecoHovered: () => g.eco.hovered()?.id ?? null,
       switchWorld: (id) => g.switchWorld(id),
       flushSave: () => g.flushSave(),
@@ -1015,7 +1016,9 @@ export interface GameDebug {
   ecoCreatures(): CreatureInfo[];
   /** Releases up to `count` creatures around cell (x, z); returns how many appeared. */
   ecoRelease(species: CreatureSpecies, x: number, z: number, count: number): number;
-  ecoReleaseAtCrosshair(count?: number): number;
+  ecoReleaseAtCrosshair(count?: number, species?: CreatureSpecies): number;
+  /** Is a creature standing at (x, y, z) out of every predator's reach? */
+  ecoSafe(x: number, y: number, z: number): boolean;
   /** Id of the creature under the crosshair, if any. */
   ecoHovered(): number | null;
   switchWorld(id: string): Promise<boolean>;

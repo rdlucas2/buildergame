@@ -7,18 +7,21 @@ import type { SceneHost } from '../render/scene';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
 import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
 import { SPECIES, describeActivity, pickCreature, type Activity, type Creature } from '../sim/creatures';
-import { Ecosystem } from '../sim/ecosystem';
+import { Ecosystem, PACK_SIZE } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
 import { EcosystemHud, openNaturePanel } from '../ui/ecosystem-hud';
+import { toast } from '../ui/toast';
 import type { WorldMode } from './world-mode';
 
 /** Seconds of real time between repaints of the terrain while the simulation runs. */
 const REPAINT_INTERVAL = 1;
 /** How far away the crosshair can pick out a creature. */
 const CREATURE_REACH = 64;
-/** Rabbits released at a time from the Nature panel. */
-export const RELEASE_COUNT = 5;
+/** Creatures released at a time from the Nature panel: a few rabbits, or a wolf pack. */
+export const RELEASE_COUNT: Record<CreatureSpecies, number> = { prey: 5, predator: PACK_SIZE };
+/** Outline drawn around the creature under the crosshair: half-width and height. */
+const HOVER_BOX: Record<CreatureSpecies, [number, number]> = { prey: [0.42, 0.85], predator: [0.55, 1.35] };
 
 /**
  * Runs the ecosystem of the current world when it is wild: owns the simulation, the ground view,
@@ -149,7 +152,10 @@ export class EcosystemController {
       this.litBySim = true;
     }
     this.hud.setVisible(!editing);
-    this.hud.update(eco.time, this.speed, eco.population.count('prey'));
+    this.hud.update(eco.time, this.speed, eco.population.count('prey'), eco.population.count('predator'));
+    for (const e of eco.events.splice(0)) {
+      if (e.kind === 'pack') toast(`A pack of ${e.count} wolves has arrived. Rabbits are only safe where wolves can't follow: behind a 1-high gap, or walls 3 blocks high.`, 'info', 7000);
+    }
   }
 
   /** Finds the creature under the crosshair (in front of any block or the ground) and outlines it. */
@@ -164,8 +170,8 @@ export class EcosystemController {
       if (hit) {
         const c = hit.creature;
         this.hoveredId = c.id;
-        const h = SPECIES[c.species].body.height;
-        this.hoverBox.setBox({ x: c.x - 0.4, y: c.y, z: c.z - 0.45 }, { x: 0.8, y: h * 0.85, z: 0.9 });
+        const [r, h] = HOVER_BOX[c.species];
+        this.hoverBox.setBox({ x: c.x - r, y: c.y, z: c.z - r }, { x: r * 2, y: h, z: r * 2 });
         return;
       }
     }
@@ -193,7 +199,7 @@ export class EcosystemController {
    * Releases creatures where the crosshair meets the ground (or below the camera when it looks at
    * the sky). Returns how many appeared.
    */
-  releaseAtCrosshair(species: CreatureSpecies = 'prey', count = RELEASE_COUNT): number {
+  releaseAtCrosshair(species: CreatureSpecies = 'prey', count = RELEASE_COUNT[species]): number {
     const cam = this.host.camera;
     const dir = cam.getWorldDirection(this.tmpDir);
     const ray = { origin: { x: cam.position.x, y: cam.position.y, z: cam.position.z }, direction: { x: dir.x, y: dir.y, z: dir.z } };
@@ -240,7 +246,7 @@ export class EcosystemController {
   setSpeed(s: Speed): void {
     this.speed = s;
     this.acc.reset();
-    if (this.eco) this.hud.update(this.eco.time, s, this.eco.population.count('prey'));
+    if (this.eco) this.hud.update(this.eco.time, s, this.eco.population.count('prey'), this.eco.population.count('predator'));
   }
 
   cycleSpeed(): Speed {
@@ -274,13 +280,15 @@ export class EcosystemController {
         coveredCells: covered,
         prey: pop.count('prey'),
         preyCap: SPECIES.prey.cap,
+        wolves: pop.count('predator'),
+        wolfCap: SPECIES.predator.cap,
         tally: { ...pop.tally },
-        history: pop.history.map(([t, n]) => [t, n] as [number, number]),
+        history: pop.history.map(([t, a, b]) => [t, a, b] as [number, number, number]),
       },
       this.overlay,
       {
         onOverlay: (o) => this.setOverlay(o),
-        onRelease: () => this.releaseAtCrosshair('prey'),
+        onRelease: (species) => this.releaseAtCrosshair(species),
       },
     );
   }
@@ -324,6 +332,7 @@ export class EcosystemController {
       shore: isShore(eco.terrain, x, z),
       biomass: eco.vegetation.biomass[i],
       skylit: eco.vegetation.cover[i] === 0,
+      safe: eco.safety.isSafe(x, 0, z),
       color: this.view ? this.view.colorAt(x, z) : null,
     };
   }
@@ -381,5 +390,7 @@ export interface EcosystemCell {
   shore: boolean;
   biomass: number;
   skylit: boolean;
+  /** Safe from predators when standing on the ground here. */
+  safe: boolean;
   color: [number, number, number] | null;
 }

@@ -171,6 +171,16 @@ test.describe('touch', () => {
       await page.waitForSelector('body[data-ready="true"]');
       await page.evaluate(() => window.__game!.createWorld('Pocket', true, 9));
       await expect(page.locator('#eco-strip')).toBeVisible();
+      // The widest the strip gets: three-digit rabbit counts and wolves too.
+      await page.evaluate(() => {
+        const g = window.__game!;
+        g.ecoSpeed(0);
+        g.ecoRelease('prey', 0, 0, 100);
+        g.ecoRelease('predator', 0, 0, 3);
+      });
+      await expect(page.locator('#eco-wolves')).toBeVisible();
+      const strip = (await page.locator('#eco-strip').boundingBox())!;
+      expect(strip.x + strip.width).toBeLessThanOrEqual(vp.width);
       const sels = ['#eco-strip', '#touch-stick', '#touch-actions', '.touch-fly', '.hud-topright', '#touch-secondary', '#hud-mode'];
       const boxes = await Promise.all(sels.map(async (sel) => ({ sel, b: await page.locator(sel).first().boundingBox() })));
       for (let i = 0; i < boxes.length; i++)

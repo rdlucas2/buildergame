@@ -14,6 +14,17 @@ async function boot(page: Page): Promise<string[]> {
   return errors;
 }
 
+/**
+ * Creates a seeded wild world that starts paused. Speed carries over to a new world, so pausing
+ * first means the simulation doesn't move in real time before the test looks at it.
+ */
+async function wildWorld(page: Page, name: string, seed: number): Promise<void> {
+  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await page.evaluate(({ name, seed }) => window.__game!.createWorld(name, true, seed), { name, seed });
+  // Not a single tick has run: the world is exactly as created (07:00 on day 1).
+  expect(await page.evaluate(() => window.__game!.eco()!.time)).toBe((480 * 7) / 24);
+}
+
 const creatures = (page: Page) => page.evaluate(() => window.__game!.ecoCreatures());
 const eco = (page: Page) => page.evaluate(() => window.__game!.eco());
 
@@ -25,8 +36,7 @@ async function frames(page: Page, n = 2): Promise<void> {
 
 test('a new wild world has a herd of rabbits that finds food and water', async ({ page }) => {
   const errors = await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Warren', true, 12345));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, 'Warren', 12345);
   const herd = await creatures(page);
   expect(herd).toHaveLength(14);
   await expect(page.locator('#eco-prey')).toHaveText('🐇 14');
@@ -55,11 +65,13 @@ test('a new wild world has a herd of rabbits that finds food and water', async (
 
 test('the crosshair shows what a rabbit is doing and how it is', async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Close up', true, 12345));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
-  const [c] = await creatures(page);
-  // Stand 3 cells south of the rabbit and look down at its middle.
-  await page.evaluate((c) => window.__game!.setPose({ position: [c.x, 1.6, c.z + 3], yaw: 0, pitch: -Math.atan2(1.6 - 0.4, 3) }), c);
+  await wildWorld(page, 'Close up', 12345);
+  // The rabbit farthest from any other, seen from straight above, so no other rabbit is in the way.
+  const herd = await creatures(page);
+  const gap = (c: (typeof herd)[number]) => Math.min(...herd.filter((o) => o !== c).map((o) => Math.hypot(o.x - c.x, o.z - c.z)));
+  const c = herd.reduce((a, b) => (gap(b) > gap(a) ? b : a));
+  expect(gap(c)).toBeGreaterThan(0.8);
+  await page.evaluate((c) => window.__game!.setPose({ position: [c.x, 3, c.z], yaw: 0, pitch: -1.55 }), c);
   await frames(page, 3);
   expect(await page.evaluate(() => window.__game!.ecoHovered())).toBe(c.id);
   const status = page.locator('#hud-status');
@@ -68,7 +80,7 @@ test('the crosshair shows what a rabbit is doing and how it is', async ({ page }
   await page.screenshot({ path: `${SHOTS}/creatures-hover.png` });
 
   // Looking away clears it.
-  await page.evaluate((c) => window.__game!.setPose({ position: [c.x, 1.6, c.z + 3], yaw: Math.PI, pitch: 0 }), c);
+  await page.evaluate((c) => window.__game!.setPose({ position: [c.x, 3, c.z], yaw: 0, pitch: 0.5 }), c);
   await frames(page, 3);
   expect(await page.evaluate(() => window.__game!.ecoHovered())).toBeNull();
   await expect(status).not.toContainText('Rabbit');
@@ -76,8 +88,7 @@ test('the crosshair shows what a rabbit is doing and how it is', async ({ page }
 
 test('the Nature panel counts rabbits and releases more at the crosshair', async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Release', true, 12345));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, 'Release', 12345);
   await page.evaluate((s) => window.__game!.ecoAdvance(s), DAY * 1.5);
   const before = (await eco(page))!;
   // Aim at open ground a little way north of the spawn point.
@@ -87,8 +98,8 @@ test('the Nature panel counts rabbits and releases more at the crosshair', async
   const panel = page.locator('#nature-panel');
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('Rabbits');
-  await expect(panel.locator('.stat', { hasText: 'Alive' })).toContainText(String(before.prey));
-  await expect(panel.locator('#prey-sparkline svg polyline')).toHaveCount(1);
+  await expect(panel.locator('.stat', { hasText: 'Rabbits' })).toContainText(String(before.prey));
+  await expect(panel.locator('#prey-sparkline svg polyline.spark-prey')).toHaveCount(1);
   await page.screenshot({ path: `${SHOTS}/creatures-nature-panel.png` });
   await panel.locator('#release-rabbits').click();
   await expect(panel).toBeHidden();
@@ -100,20 +111,23 @@ test('the Nature panel counts rabbits and releases more at the crosshair', async
 
 test('rabbits survive a reload and an export/import with their needs intact', async ({ page }) => {
   await boot(page);
-  await page.evaluate(() => window.__game!.createWorld('Burrow', true, 31337));
-  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  await wildWorld(page, 'Burrow', 31337);
   await page.evaluate((s) => window.__game!.ecoAdvance(s), 200);
   const before = await creatures(page);
+  const t0 = (await eco(page))!.time;
   await page.evaluate(() => window.__game!.flushSave());
   await page.reload();
   await page.waitForSelector('body[data-ready="true"]');
   await page.evaluate(() => window.__game!.ecoSpeed(0));
   const after = await creatures(page);
   expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id));
-  // The reload runs a moment of 1x time before the pause lands, so allow a little drift.
+  // Speed isn't saved: the reloaded world runs at 1x until the pause lands. Allow only as much
+  // change as that much simulated time permits (fastest movement 3.6 cells/s, drinking 0.35/s).
+  const dt = (await eco(page))!.time - t0;
+  expect(dt).toBeLessThan(5);
   for (let i = 0; i < before.length; i++) {
-    expect(Math.hypot(after[i].x - before[i].x, after[i].z - before[i].z)).toBeLessThan(8);
-    expect(Math.abs(after[i].hydration - before[i].hydration)).toBeLessThan(0.05);
+    expect(Math.hypot(after[i].x - before[i].x, after[i].z - before[i].z)).toBeLessThanOrEqual(3.6 * dt + 0.01);
+    expect(Math.abs(after[i].hydration - before[i].hydration)).toBeLessThanOrEqual(0.35 * dt + 0.002);
   }
 
   const b64 = await page.evaluate(() => window.__game!.exportWorldBundleBase64());

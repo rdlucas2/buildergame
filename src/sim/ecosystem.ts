@@ -1,9 +1,10 @@
 import type { Structure } from '../core/structure';
 import type { CreatureSpecies, EcosystemState, Placement } from '../core/world';
-import { START_TIME, TICK_SECONDS, daylight } from './clock';
+import { DAY_SECONDS, START_TIME, TICK_SECONDS, daylight } from './clock';
 import { Population, SPECIES, type Tally } from './creatures';
 import { Navigator } from './navigation';
 import { Rng, hash3 } from './rng';
+import { SafetyMap } from './safety';
 import { ShoreIndex } from './shores';
 import { SolidMap } from './solids';
 import { generateTerrain, type Terrain } from './terrain';
@@ -13,6 +14,16 @@ export type StructureLookup = (id: string) => Structure | undefined;
 
 /** Rabbits a new wild world starts with, grazing near the starter pond. */
 export const STARTER_HERD = 14;
+/** Wolves that arrive together, first late on day 1 and again whenever wolves have died out. */
+export const PACK_SIZE = 3;
+/** Seconds until the first pack arrives in a new world (about 17:30 on day 1). */
+export const FIRST_PACK = DAY_SECONDS * 0.44;
+/** Seconds without any wolves before a new pack wanders in. */
+export const PACK_RETURN = DAY_SECONDS * 1.5;
+/** How far from the herd a pack appears. */
+const PACK_DISTANCE = 80;
+
+export type EcosystemEvent = { kind: 'pack'; x: number; z: number; count: number };
 
 /**
  * Everything that lives in a wild world, independent of rendering: terrain, vegetation, creatures
@@ -25,10 +36,15 @@ export class Ecosystem {
   readonly nav: Navigator;
   readonly shores: ShoreIndex;
   readonly population: Population;
+  readonly safety: SafetyMap;
   readonly rng: Rng;
   readonly seed: number;
   time: number;
   ticks = 0;
+  /** Seconds until a wolf pack arrives, counting down only while there are no wolves. */
+  packTimer: number;
+  /** Things worth telling the player about, collected until the view drains them. */
+  events: EcosystemEvent[] = [];
   private lookup: StructureLookup = () => undefined;
   /** Worlds saved before creatures existed get their starter herd once placements are known. */
   private herdPending: boolean;
@@ -43,7 +59,9 @@ export class Ecosystem {
     this.solids = new SolidMap((id) => this.lookup(id));
     this.nav = new Navigator(this.solids, this.terrain);
     this.shores = new ShoreIndex(this.terrain);
-    this.population = new Population(this.nav, this.vegetation, this.shores, this.rng);
+    this.safety = new SafetyMap(this.nav);
+    this.population = new Population(this.nav, this.vegetation, this.shores, this.rng, this.safety);
+    this.packTimer = state.packTimer ?? FIRST_PACK;
     if (state.creatures) this.population.load(state.creatures, state.nextCreatureId);
     if (state.history) this.population.history = state.history.map(([t, a, b]) => [t, a, b]);
     if (state.tally) {
@@ -74,6 +92,7 @@ export class Ecosystem {
     this.lookup = lookup;
     this.vegetation.clearPlacements();
     this.solids.reset(placements);
+    this.safety.invalidate();
     for (const p of placements) {
       const s = lookup(p.structureId);
       if (s) this.vegetation.addPlacement(p, s);
@@ -88,12 +107,14 @@ export class Ecosystem {
     if (!s) return;
     this.vegetation.addPlacement(p, s);
     this.solids.add(p);
+    this.safety.invalidate();
     this.population.worldChanged();
   }
 
   placementRemoved(id: string): void {
     this.vegetation.removePlacement(id);
     this.solids.remove(id);
+    this.safety.invalidate();
     this.population.worldChanged();
   }
 
@@ -103,6 +124,38 @@ export class Ecosystem {
     this.ticks++;
     this.vegetation.tick(daylight(this.time));
     this.population.tick(this.time);
+    this.wolves();
+  }
+
+  /** Wolves wander in from far away once there have been none for a while (and there is prey). */
+  private wolves(): void {
+    const pop = this.population;
+    if (pop.count('predator') > 0) {
+      this.packTimer = Math.max(this.packTimer, PACK_RETURN);
+      return;
+    }
+    this.packTimer -= TICK_SECONDS;
+    if (this.packTimer > 0) return;
+    const prey = pop.creatures.filter((c) => c.species === 'prey' && c.deadFor < 0);
+    if (prey.length < 6) {
+      this.packTimer = DAY_SECONDS * 0.25;
+      return;
+    }
+    const cx = prey.reduce((s, c) => s + c.x, 0) / prey.length;
+    const cz = prey.reduce((s, c) => s + c.z, 0) / prey.length;
+    const half = this.terrain.half;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const x = Math.round(Math.max(-half + 8, Math.min(half - 8, cx + Math.cos(a) * PACK_DISTANCE)));
+      const z = Math.round(Math.max(-half + 8, Math.min(half - 8, cz + Math.sin(a) * PACK_DISTANCE)));
+      const n = pop.spawnGroup('predator', x, z, PACK_SIZE, 3);
+      if (n > 0) {
+        this.events.push({ kind: 'pack', x, z, count: n });
+        this.packTimer = PACK_RETURN;
+        return;
+      }
+    }
+    this.packTimer = DAY_SECONDS * 0.1;
   }
 
   /** Runs whole ticks covering `seconds` of simulation time. */
@@ -148,6 +201,7 @@ export class Ecosystem {
       rng: this.rng.seedState,
       history: p.history.map(([t, a, b]) => [t, a, b]),
       tally: { ...p.tally },
+      packTimer: Math.round(this.packTimer * 10) / 10,
     };
   }
 }

@@ -4,9 +4,10 @@ import type { Structure } from '../../../src/core/structure';
 import { createPlacement, createWorld, type Placement } from '../../../src/core/world';
 import { DAY_SECONDS, TICK_SECONDS, isNight } from '../../../src/sim/clock';
 import { Population, SPECIES, pickCreature } from '../../../src/sim/creatures';
-import { Ecosystem, STARTER_HERD } from '../../../src/sim/ecosystem';
+import { Ecosystem, FIRST_PACK, PACK_RETURN, PACK_SIZE, STARTER_HERD } from '../../../src/sim/ecosystem';
 import { Navigator } from '../../../src/sim/navigation';
 import { Rng } from '../../../src/sim/rng';
+import { SafetyMap } from '../../../src/sim/safety';
 import { ShoreIndex } from '../../../src/sim/shores';
 import { SolidMap } from '../../../src/sim/solids';
 import { cellIndex, generateTerrain } from '../../../src/sim/terrain';
@@ -14,7 +15,7 @@ import { Vegetation } from '../../../src/sim/vegetation';
 import { makeStructure } from '../helpers';
 
 /** A small flat test world: optional water along x = 10..12, and uniform grass. */
-function lab(opts: { water?: boolean; grass?: number; seed?: number } = {}) {
+function lab(opts: { water?: boolean; grass?: number; seed?: number; time?: number } = {}) {
   const size = 64;
   const terrain = generateTerrain(size, 1, { dryRadius: 0 });
   terrain.water.fill(0);
@@ -23,12 +24,14 @@ function lab(opts: { water?: boolean; grass?: number; seed?: number } = {}) {
   const structures = new Map<string, Structure>();
   const solids = new SolidMap((id) => structures.get(id));
   const nav = new Navigator(solids, terrain);
-  const pop = new Population(nav, veg, new ShoreIndex(terrain), new Rng(opts.seed ?? 7));
-  let time = DAY_SECONDS * 0.4; // late morning
+  const safety = new SafetyMap(nav);
+  const pop = new Population(nav, veg, new ShoreIndex(terrain), new Rng(opts.seed ?? 7), safety);
+  let time = opts.time ?? DAY_SECONDS * 0.4; // late morning
   const place = (s: Structure, p: Placement) => {
     structures.set(s.id, s);
     solids.add(p);
     veg.addPlacement(p, s);
+    safety.invalidate();
     pop.worldChanged();
   };
   const run = (seconds: number) => {
@@ -37,7 +40,7 @@ function lab(opts: { water?: boolean; grass?: number; seed?: number } = {}) {
       pop.tick(time);
     }
   };
-  return { terrain, veg, solids, nav, pop, place, run, get time() { return time; } };
+  return { terrain, veg, solids, nav, pop, safety, place, run, get time() { return time; } };
 }
 
 describe('a new wild world', () => {
@@ -199,6 +202,7 @@ describe('saving', () => {
     expect(r.rng.seedState).toBe(e.rng.seedState);
     expect(r.population.tally).toEqual(e.population.tally);
     expect(r.population.history).toEqual(e.population.history);
+    expect(r.packTimer).toBeCloseTo(e.packTimer, 1);
     const [a, b] = [e.population.creatures[0], r.population.creatures[0]];
     expect(b.id).toBe(a.id);
     expect(b.x).toBeCloseTo(a.x, 2);
@@ -214,6 +218,15 @@ describe('saving', () => {
     a.advance(200);
     b.advance(200);
     expect(JSON.stringify(a.snapshot().creatures)).toBe(JSON.stringify(b.snapshot().creatures));
+  });
+
+  it('rejects a wild world with a ground too large to simulate', () => {
+    const e = Ecosystem.create(256, 5);
+    const world = createWorld({ name: 'Wild', ground: { material: 'grass', size: 256 }, ecosystem: e.snapshot() });
+    const file = JSON.parse(JSON.stringify(encodeWorld(world, () => undefined)));
+    file.ground.size = 65536;
+    delete file.ecosystem.biomass;
+    expect(() => decodeWorld(file)).toThrow(/at most 2048/);
   });
 
   it('rejects creature data that is out of range or duplicated', () => {
@@ -251,4 +264,90 @@ describe('releasing and picking', () => {
     expect(pickCreature(w.pop.creatures, origin, dir, 3)).toBeNull();
     expect(pickCreature(w.pop.creatures, origin, { x: 1, y: 0, z: 0 }, 64)).toBeNull();
   });
+});
+
+/** A 7×7 pen with 3-high walls and a 1-high door in the middle of its z = 0 wall: a rabbit burrow. */
+const burrow = () =>
+  makeStructure('burrow', { x: 7, y: 3, z: 7 }, (x, y, z) => (x === 0 || x === 6 || z === 0 || z === 6) && !(x === 3 && z === 0 && y === 0), 'stone', 'burrow');
+
+describe('predators', () => {
+  it('a pounce catches a rabbit and feeds the wolf', () => {
+    const w = lab({ water: true, grass: 200 });
+    const rabbit = w.pop.spawn('prey', 0, 0, 0, { heading: 0 });
+    const wolf = w.pop.spawn('predator', 0, 0, -5, { heading: 0, satiety: 0.3 });
+    for (let i = 0; i < 150 && w.pop.tally.eaten === 0; i++) w.run(0.1);
+    expect(w.pop.tally.eaten).toBe(1);
+    expect(rabbit.cause).toBe('eaten');
+    expect(wolf.satiety).toBeGreaterThan(0.8);
+    expect(wolf.activity).toBe('eat');
+  });
+
+  it('a rabbit that sees a wolf runs into its burrow, and the wolf cannot follow', () => {
+    const w = lab({ water: true, grass: 200 });
+    w.place(burrow(), createPlacement('burrow', { x: 0, y: 0, z: 0 }, 0, 'b'));
+    const rabbit = w.pop.spawn('prey', 3, 0, -4, { heading: Math.PI });
+    w.pop.spawn('predator', 3, 0, -18, { heading: 0, satiety: 0.3 });
+    w.run(15);
+    expect(rabbit.deadFor).toBe(-1);
+    expect(w.safety.isSafe(Math.floor(rabbit.x), rabbit.y, Math.floor(rabbit.z))).toBe(true);
+    expect(rabbit.z).toBeGreaterThan(0.5); // inside, past the doorway
+    expect(w.pop.tally.eaten).toBe(0);
+  });
+
+  it('through a night with wolves about, rabbits in a burrow survive while rabbits in the open are caught', () => {
+    const w = lab({ water: true, grass: 200, time: DAY_SECONDS * 0.78, seed: 5 });
+    w.place(burrow(), createPlacement('burrow', { x: 0, y: 0, z: 0 }, 0, 'b'));
+    const inside = [1, 2, 3, 4].map((i) => w.pop.spawn('prey', i, 0, 3, { hydration: 1, satiety: 1 }));
+    const outside = [1, 2, 3, 4].map((i) => w.pop.spawn('prey', -16 + i, 0, 16, { hydration: 1, satiety: 1 }));
+    w.pop.spawn('predator', -12, 0, 0, { satiety: 0.2 });
+    w.pop.spawn('predator', -8, 0, -6, { satiety: 0.2 });
+    w.run(DAY_SECONDS * 0.3);
+    expect(inside.every((c) => c.deadFor === -1)).toBe(true);
+    expect(outside.filter((c) => c.cause === 'eaten').length).toBeGreaterThan(0);
+  });
+
+  it('a new world gets a wolf pack late on day 1, and another after wolves die out', () => {
+    const e = Ecosystem.create(256, 42);
+    expect(e.population.count('predator')).toBe(0);
+    e.advance(FIRST_PACK - 10);
+    expect(e.population.count('predator')).toBe(0);
+    e.advance(11);
+    expect(e.population.count('predator')).toBe(PACK_SIZE);
+    expect(e.events).toEqual([expect.objectContaining({ kind: 'pack', count: PACK_SIZE })]);
+    const wolves = e.population.creatures.filter((c) => c.species === 'predator');
+    const herd = e.population.creatures.filter((c) => c.species === 'prey');
+    const hx = herd.reduce((s, c) => s + c.x, 0) / herd.length;
+    const hz = herd.reduce((s, c) => s + c.z, 0) / herd.length;
+    for (const w of wolves) expect(Math.hypot(w.x - hx, w.z - hz)).toBeGreaterThan(50);
+    for (const w of wolves) w.health = -1;
+    e.advance(1);
+    expect(e.population.count('predator')).toBe(0);
+    e.advance(PACK_RETURN - 10);
+    expect(e.population.count('predator')).toBe(0);
+    e.advance(20);
+    expect(e.population.count('predator')).toBe(PACK_SIZE);
+  });
+
+  it('rabbits and wolves both live on through several days', () => {
+    const e = Ecosystem.create(1024, 12345);
+    e.advance(DAY_SECONDS * 3.5);
+    expect(e.population.count('prey')).toBeGreaterThan(10);
+    expect(e.population.count('predator')).toBeGreaterThan(0);
+    expect(e.population.tally.eaten).toBeGreaterThan(3);
+  }, 60_000);
+
+  it('runs 300 rabbits and 30 wolves well within budget', () => {
+    const e = Ecosystem.create(1024, 777);
+    e.release('prey', -20, -10, 400, 40);
+    e.release('predator', 20, 20, 30, 20);
+    expect(e.population.count('prey')).toBe(SPECIES.prey.cap);
+    expect(e.population.count('predator')).toBe(SPECIES.predator.cap);
+    for (const c of e.population.creatures) if (c.species === 'predator') c.satiety = 0.4; // hunting
+    e.advance(5); // warm up
+    const t0 = performance.now();
+    e.advance(60);
+    const perTick = (performance.now() - t0) / 600;
+    console.log(`ecosystem tick with 300 rabbits and 30 wolves: ${perTick.toFixed(3)} ms`);
+    expect(perTick).toBeLessThan(4);
+  }, 60_000);
 });
