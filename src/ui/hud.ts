@@ -15,7 +15,7 @@ export class Hud {
   private readonly statusEl = el('div', { class: 'hud-status', id: 'hud-status' });
   private readonly hintEl = el('div', { class: 'hud-hint', id: 'hud-hint' });
   private readonly hotbarEl = el('div', { class: 'hotbar', id: 'hotbar' });
-  private readonly startEl = el('div', { class: 'start-overlay', id: 'start-overlay' }, el('div', { class: 'start-card' }, el('h1', {}, 'Buildergame'), el('p', {}, 'Click to take control. Move with WASD, fly with Space / Shift, look with the mouse.'), el('p', { class: 'muted' }, 'Press H any time for the full list of controls.')));
+  private readonly startEl = el('div', { class: 'start-overlay', id: 'start-overlay' }, el('div', { class: 'start-card' }, el('h1', {}, 'Buildergame'), el('p', {}, 'Click to take control. Move with WASD, fly with Space / Shift, look with the mouse.'), el('p', {}, 'Press Tab to open the library and place an example, or B to build your own.'), el('p', { class: 'muted' }, 'Press H any time for the full list of controls.')));
   readonly structureBtn: HTMLButtonElement;
 
   constructor(buttons: HudButtons) {

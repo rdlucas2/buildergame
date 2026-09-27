@@ -300,3 +300,61 @@ test('400 placements of one structure stay cheap to draw and check', async ({ pa
   expect(r.placeMs).toBeLessThan(5000);
   await page.screenshot({ path: `${SHOTS}/stress-400.png` });
 });
+
+test('built-in examples: place from the library, survive reload, travel in bundles, edit as copies', async ({ page }) => {
+  await boot(page);
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#library-panel')).toBeVisible();
+  await page.locator('.tab[data-tab="examples"]').click();
+  const cards = page.locator('#examples-grid .card');
+  await expect(cards).toHaveCount(5);
+  await expect(cards.locator('.card-title')).toHaveText(['Cottage', 'Farmhouse', 'Modern House', 'Eiffel Tower', 'Arc de Triomphe']);
+  for (const src of await cards.locator('img.thumb').evaluateAll((imgs) => imgs.map((i) => (i as HTMLImageElement).src))) {
+    expect(src.startsWith('data:image/')).toBe(true);
+  }
+  await page.screenshot({ path: `${SHOTS}/library-examples.png` });
+
+  // Place the Eiffel Tower from its card.
+  await page.locator('#examples-grid .card[data-structure-id="example-eiffel-tower"] [data-action="place"]').click();
+  await expect(page.locator('#library-panel')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__game!.placing()?.structureId)).toBe('example-eiffel-tower');
+  await page.evaluate(async () => {
+    const g = window.__game!;
+    g.setPose({ position: [0, 30, 90], yaw: 0, pitch: -0.35 });
+    await g.nextFrame();
+  });
+  expect(await page.evaluate(() => window.__game!.placing()?.ok)).toBe(true);
+  expect(await page.evaluate(() => window.__game!.confirmPlacement()?.structureId)).toBe('example-eiffel-tower');
+  await page.evaluate(() => window.__game!.cancelPlacing());
+  await page.screenshot({ path: `${SHOTS}/example-eiffel-placed.png` });
+
+  // Examples are not copied into the player's library, yet the placement survives a reload.
+  expect(await page.evaluate(() => window.__game!.library())).toEqual([]);
+  await page.evaluate(() => window.__game!.flushSave());
+  await page.reload();
+  await page.waitForSelector('body[data-ready="true"]');
+  const after = await page.evaluate(() => ({ world: window.__game!.world(), stats: window.__game!.stats() }));
+  expect(after.world.placements.map((p) => p.structureId)).toEqual(['example-eiffel-tower']);
+  expect(after.stats.rendered).toBe(1);
+
+  // A world bundle carries the example and imports back onto the built-in copy.
+  const b64 = await page.evaluate(() => window.__game!.exportWorldBundleBase64());
+  expect(await page.evaluate((b) => window.__game!.importWorldBundleBase64(b), b64)).not.toBeNull();
+  expect((await page.evaluate(() => window.__game!.world())).placements.map((p) => p.structureId)).toEqual(['example-eiffel-tower']);
+  expect(await page.evaluate(() => window.__game!.library())).toEqual([]);
+
+  // Editing an example works on a copy: saving creates a new structure and the example is unchanged.
+  const before = await page.evaluate(() => window.__game!.examples().find((e) => e.id === 'example-cottage')!.blocks);
+  await page.evaluate(() => window.__game!.enterStructureMode('example-cottage'));
+  await expect(page.locator('#hud-mode')).toContainText('copy of "Cottage"');
+  expect((await page.evaluate(() => window.__game!.dimensions()))!.blocks).toBe(before);
+  await page.evaluate(() => window.__game!.setVoxel(1, 60, 1, 'gold'));
+  const copy = await page.evaluate(() => window.__game!.saveStructure('My Cottage').then((s) => (s ? { id: s.id, author: s.author } : null)));
+  expect(copy).not.toBeNull();
+  expect(copy!.id.startsWith('example-')).toBe(false);
+  expect(copy!.author).toBe('');
+  const mine = await page.evaluate(() => window.__game!.library());
+  expect(mine.map((s) => s.name)).toEqual(['My Cottage']);
+  expect(await page.evaluate(() => window.__game!.examples().find((e) => e.id === 'example-cottage')!.blocks)).toBe(before);
+});
+

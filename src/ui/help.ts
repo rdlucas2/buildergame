@@ -15,7 +15,7 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
   [
     'World mode',
     [
-      ['Tab', 'Open your structure library and pick one to place'],
+      ['Tab', 'Open the structure library: your own structures and ready-made examples'],
       ['Left click', 'Place the previewed structure (green = fits, red = blocked)'],
       ['R', 'Rotate the preview a quarter turn'],
       ['Esc / right click', 'Stop placing'],
