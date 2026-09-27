@@ -1,7 +1,12 @@
-import type { EcosystemState, Placement, World } from '../core/world';
+import { LineBasicMaterial, Vector3 } from 'three';
+import { rayPlaneY } from '../core/raycast';
+import type { CreatureSpecies, EcosystemState, Placement, World } from '../core/world';
+import { CreatureView } from '../render/creature-view';
+import { OutlineBox } from '../render/highlight';
 import type { SceneHost } from '../render/scene';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
-import { SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
+import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
+import { SPECIES, describeActivity, pickCreature, type Activity, type Creature } from '../sim/creatures';
 import { Ecosystem } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
@@ -10,6 +15,10 @@ import type { WorldMode } from './world-mode';
 
 /** Seconds of real time between repaints of the terrain while the simulation runs. */
 const REPAINT_INTERVAL = 1;
+/** How far away the crosshair can pick out a creature. */
+const CREATURE_REACH = 64;
+/** Rabbits released at a time from the Nature panel. */
+export const RELEASE_COUNT = 5;
 
 /**
  * Runs the ecosystem of the current world when it is wild: owns the simulation, the ground view,
@@ -20,6 +29,10 @@ export class EcosystemController {
   private eco: Ecosystem | null = null;
   private worldId: string | null = null;
   private view: TerrainView | null = null;
+  private creatureView: CreatureView | null = null;
+  private readonly hoverBox = new OutlineBox(new LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }), 0.02);
+  private hoveredId: number | null = null;
+  private readonly tmpDir = new Vector3();
   private readonly acc = new TickAccumulator();
   private readonly hud: EcosystemHud;
   private repaintTimer = 0;
@@ -35,6 +48,7 @@ export class EcosystemController {
     private readonly library: StructureLibrary,
     container: HTMLElement,
   ) {
+    this.hoverBox.object.name = 'creature-hover';
     this.hud = new EcosystemHud(container, {
       onSpeed: (s) => this.setSpeed(s),
       onNature: () => this.openPanel(),
@@ -80,6 +94,9 @@ export class EcosystemController {
     this.view = new TerrainView(this.eco);
     this.view.setOverlay(this.overlay);
     this.worldMode.group.add(this.view.group);
+    this.creatureView = new CreatureView();
+    this.worldMode.group.add(this.creatureView.group, this.hoverBox.object);
+    this.creatureView.update(this.eco.population.creatures, 1);
     this.acc.reset();
     this.hud.setVisible(true);
     document.body.classList.add('wild');
@@ -91,6 +108,13 @@ export class EcosystemController {
       this.view.dispose();
     }
     this.view = null;
+    if (this.creatureView) {
+      this.worldMode.group.remove(this.creatureView.group, this.hoverBox.object);
+      this.creatureView.dispose();
+    }
+    this.creatureView = null;
+    this.hoverBox.hide();
+    this.hoveredId = null;
     this.eco = null;
     this.worldId = null;
     this.hud.setVisible(false);
@@ -115,6 +139,8 @@ export class EcosystemController {
       }
     }
     this.view?.update();
+    this.creatureView?.update(eco.population.creatures, this.speed === 0 ? 1 : this.acc.alpha);
+    this.updateHover(editing);
     if (editing) {
       if (this.litBySim) this.host.resetDaylight();
       this.litBySim = false;
@@ -123,7 +149,87 @@ export class EcosystemController {
       this.litBySim = true;
     }
     this.hud.setVisible(!editing);
-    this.hud.update(eco.time, this.speed);
+    this.hud.update(eco.time, this.speed, eco.population.count('prey'));
+  }
+
+  /** Finds the creature under the crosshair (in front of any block or the ground) and outlines it. */
+  private updateHover(editing: boolean): void {
+    const eco = this.eco;
+    this.hoveredId = null;
+    if (eco && !editing) {
+      const cam = this.host.camera;
+      const dir = cam.getWorldDirection(this.tmpDir);
+      const reach = Math.min(CREATURE_REACH, this.worldMode.hitDistance + 0.25);
+      const hit = pickCreature(eco.population.creatures, cam.position, dir, reach);
+      if (hit) {
+        const c = hit.creature;
+        this.hoveredId = c.id;
+        const h = SPECIES[c.species].body.height;
+        this.hoverBox.setBox({ x: c.x - 0.4, y: c.y, z: c.z - 0.45 }, { x: 0.8, y: h * 0.85, z: 0.9 });
+        return;
+      }
+    }
+    this.hoverBox.hide();
+  }
+
+  /** The creature under the crosshair, if any. */
+  hovered(): Creature | null {
+    if (this.hoveredId === null || !this.eco) return null;
+    const c = this.eco.population.get(this.hoveredId);
+    return c && c.deadFor < 0 ? c : null;
+  }
+
+  /** One status line describing the creature under the crosshair, or null. */
+  hoverText(): string | null {
+    const c = this.hovered();
+    if (!c) return null;
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const def = SPECIES[c.species];
+    const age = c.age < def.maturity ? 'young' : `${(c.age / DAY_SECONDS).toFixed(1)} days old`;
+    return `${def.name} (${age}) · ${describeActivity(c)} · food ${pct(c.satiety)} · water ${pct(c.hydration)} · energy ${pct(c.energy)} · health ${pct(c.health)}`;
+  }
+
+  /**
+   * Releases creatures where the crosshair meets the ground (or below the camera when it looks at
+   * the sky). Returns how many appeared.
+   */
+  releaseAtCrosshair(species: CreatureSpecies = 'prey', count = RELEASE_COUNT): number {
+    const cam = this.host.camera;
+    const dir = cam.getWorldDirection(this.tmpDir);
+    const ray = { origin: { x: cam.position.x, y: cam.position.y, z: cam.position.z }, direction: { x: dir.x, y: dir.y, z: dir.z } };
+    const t = rayPlaneY(ray, 0);
+    const at = t !== null && t <= CREATURE_REACH * 2 ? { x: ray.origin.x + dir.x * t, z: ray.origin.z + dir.z * t } : { x: cam.position.x, z: cam.position.z };
+    return this.release(species, Math.floor(at.x), Math.floor(at.z), count);
+  }
+
+  release(species: CreatureSpecies, x: number, z: number, count: number): number {
+    if (!this.eco) return 0;
+    const n = this.eco.release(species, x, z, count);
+    if (n > 0) {
+      this.creatureView?.update(this.eco.population.creatures, 1);
+      this.onActivity?.();
+    }
+    return n;
+  }
+
+  /** Living creatures (tests and debugging). */
+  creatures(): CreatureInfo[] {
+    if (!this.eco) return [];
+    return this.eco.population.creatures
+      .filter((c) => c.deadFor < 0)
+      .map((c) => ({
+        id: c.id,
+        species: c.species,
+        x: c.x,
+        y: c.y,
+        z: c.z,
+        activity: c.activity,
+        satiety: c.satiety,
+        hydration: c.hydration,
+        energy: c.energy,
+        health: c.health,
+        age: c.age,
+      }));
   }
 
   /** The state to save with the world, or undefined for plain worlds. */
@@ -134,7 +240,7 @@ export class EcosystemController {
   setSpeed(s: Speed): void {
     this.speed = s;
     this.acc.reset();
-    if (this.eco) this.hud.update(this.eco.time, s);
+    if (this.eco) this.hud.update(this.eco.time, s, this.eco.population.count('prey'));
   }
 
   cycleSpeed(): Speed {
@@ -159,15 +265,23 @@ export class EcosystemController {
     if (!eco) return;
     let covered = 0;
     for (let i = 0; i < eco.vegetation.cover.length; i++) if (eco.vegetation.cover[i] > 0) covered++;
+    const pop = eco.population;
     openNaturePanel(
       {
         clock: formatClock(eco.time),
         grassCoverage: eco.vegetation.coverage(),
         waterShare: eco.terrain.waterCells / (eco.size * eco.size),
         coveredCells: covered,
+        prey: pop.count('prey'),
+        preyCap: SPECIES.prey.cap,
+        tally: { ...pop.tally },
+        history: pop.history.map(([t, n]) => [t, n] as [number, number]),
       },
       this.overlay,
-      (o) => this.setOverlay(o),
+      {
+        onOverlay: (o) => this.setOverlay(o),
+        onRelease: () => this.releaseAtCrosshair('prey'),
+      },
     );
   }
 
@@ -194,6 +308,10 @@ export class EcosystemController {
       overlay: this.overlay,
       waterCells: eco.terrain.waterCells,
       coveredCells: covered,
+      prey: eco.population.count('prey'),
+      predators: eco.population.count('predator'),
+      tally: { ...eco.population.tally },
+      historyLength: eco.population.history.length,
     };
   }
 
@@ -238,6 +356,24 @@ export interface EcosystemInfo {
   overlay: Overlay;
   waterCells: number;
   coveredCells: number;
+  prey: number;
+  predators: number;
+  tally: Record<string, number>;
+  historyLength: number;
+}
+
+export interface CreatureInfo {
+  id: number;
+  species: CreatureSpecies;
+  x: number;
+  y: number;
+  z: number;
+  activity: Activity;
+  satiety: number;
+  hydration: number;
+  energy: number;
+  health: number;
+  age: number;
 }
 
 export interface EcosystemCell {

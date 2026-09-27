@@ -33,6 +33,9 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
       ['O', 'Cycle overlays: food, blocked sky, water'],
       ['T', 'Cycle time speed: pause, 1×, 4×, 16×'],
       ['Food', 'Grass grows only where no block is overhead; roofs starve the ground beneath'],
+      ['Rabbits', 'Eat grass, drink at the shore, sleep at night (under a roof if one is near) and breed when well fed'],
+      ['Aim at a rabbit', 'See what it is doing and its food, water, energy and health'],
+      ['Nature panel', 'Population graph, and a button to release rabbits at the crosshair'],
     ],
   ],
   [

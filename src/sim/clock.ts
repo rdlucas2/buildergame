@@ -60,6 +60,11 @@ export class TickAccumulator {
     return ticks;
   }
 
+  /** How far (0–1) real time has moved past the last whole tick, for smooth rendering between ticks. */
+  get alpha(): number {
+    return Math.min(1, Math.max(0, this.carry / TICK_SECONDS));
+  }
+
   reset(): void {
     this.carry = 0;
   }

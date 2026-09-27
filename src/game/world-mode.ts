@@ -40,6 +40,8 @@ export class WorldMode {
   hoverVoxel: Vec3 | null = null;
   onChange?: () => void;
   /** Fine-grained placement events, used by the ecosystem to update sky cover incrementally. */
+  /** Distance along the view ray to the first block or the ground (Infinity when neither is in reach). */
+  hitDistance = Infinity;
   onPlacementAdded?: (p: Placement) => void;
   onPlacementRemoved?: (id: string) => void;
   onPlacementsReset?: (placements: readonly Placement[]) => void;
@@ -242,6 +244,7 @@ export class WorldMode {
     const hit = raycastVoxels(ray, REACH, (x, y, z) => this.placementAt(x, y, z) !== null);
     const tGround = rayPlaneY(ray, 0);
     const groundFirst = tGround !== null && tGround <= REACH && (!hit || tGround < hit.distance);
+    this.hitDistance = Math.min(hit ? hit.distance : Infinity, tGround !== null && tGround <= REACH ? tGround : Infinity);
 
     this.hoveredId = null;
     this.hoverVoxel = null;
