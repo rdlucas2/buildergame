@@ -5,11 +5,20 @@ import { openStore, type KeyValueStore } from './kv';
 
 export type LibraryListener = () => void;
 
-/** All structures the player has built or imported. Persisted as structure-file JSON records. */
+/**
+ * All structures the player has built or imported, persisted as structure-file JSON records, plus
+ * read-only built-in examples. Examples are never stored: `get` falls back to them, so worlds can
+ * place, render, collide with and export them like any other structure.
+ */
 export class StructureLibrary {
   private readonly items = new Map<string, Structure>();
+  private readonly exampleMap: ReadonlyMap<string, Structure>;
   private store: KeyValueStore<StructureFile> | null = null;
   private readonly listeners = new Set<LibraryListener>();
+
+  constructor(examples: readonly Structure[] = []) {
+    this.exampleMap = new Map(examples.map((e) => [e.id, e]));
+  }
 
   async open(): Promise<void> {
     this.store = await openStore<StructureFile>('structures');
@@ -33,30 +42,43 @@ export class StructureLibrary {
     return () => this.listeners.delete(fn);
   }
 
+  /** Number of the player's own structures (examples excluded). */
   get size(): number {
     return this.items.size;
   }
 
+  /** A player structure or a built-in example. Examples win so they can never be shadowed. */
   get(id: string): Structure | undefined {
-    return this.items.get(id);
+    return this.exampleMap.get(id) ?? this.items.get(id);
   }
 
   has(id: string): boolean {
-    return this.items.has(id);
+    return this.exampleMap.has(id) || this.items.has(id);
   }
 
-  /** Newest first. */
+  isExample(id: string): boolean {
+    return this.exampleMap.has(id);
+  }
+
+  /** Built-in examples, in their defined order. */
+  examples(): Structure[] {
+    return [...this.exampleMap.values()];
+  }
+
+  /** The player's own structures, newest first. */
   all(): Structure[] {
     return [...this.items.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
   }
 
   async save(s: Structure): Promise<void> {
+    this.assertWritable(s.id);
     this.items.set(s.id, s);
     await this.store?.set(s.id, encodeStructure(s));
     this.emit();
   }
 
   async saveMany(list: Structure[]): Promise<void> {
+    for (const s of list) this.assertWritable(s.id);
     for (const s of list) {
       this.items.set(s.id, s);
       await this.store?.set(s.id, encodeStructure(s));
@@ -65,7 +87,7 @@ export class StructureLibrary {
   }
 
   async remove(id: string): Promise<boolean> {
-    if (!this.items.delete(id)) return false;
+    if (this.exampleMap.has(id) || !this.items.delete(id)) return false;
     await this.store?.delete(id);
     this.emit();
     return true;
@@ -77,7 +99,7 @@ export class StructureLibrary {
    */
   async importText(text: string): Promise<{ structure: Structure; outcome: 'added' | 'reused' | 'renamed' }> {
     const parsed = parseStructure(text);
-    const existing = this.items.get(parsed.id);
+    const existing = this.get(parsed.id);
     if (existing) {
       if (structureContentEquals(existing, parsed)) return { structure: existing, outcome: 'reused' };
       const renamed = { ...parsed, id: newId() };
@@ -86,6 +108,10 @@ export class StructureLibrary {
     }
     await this.save(parsed);
     return { structure: parsed, outcome: 'added' };
+  }
+
+  private assertWritable(id: string): void {
+    if (this.exampleMap.has(id)) throw new Error(`"${id}" is a built-in example and cannot be overwritten`);
   }
 
   private emit(): void {

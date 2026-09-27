@@ -8,6 +8,7 @@ import type { Vec3 } from '../core/math';
 import type { Rotation } from '../core/rotation';
 import { EmptyStructureError, structureBlockCount, type Structure } from '../core/structure';
 import { createWorld, referencedStructureIds, touchWorld, type Placement, type World } from '../core/world';
+import { buildExampleStructures, exampleDescription } from '../examples';
 import { buildStructureGeometry, StructureGeometryCache } from '../render/structure-geometry';
 import { SceneHost } from '../render/scene';
 import { renderThumbnail } from '../render/thumbnail';
@@ -18,7 +19,7 @@ import { WorldStore } from '../storage/worlds';
 import { confirmDialog, promptDialog } from '../ui/dialogs';
 import { openHelp } from '../ui/help';
 import { Hud } from '../ui/hud';
-import { openLibraryPanel } from '../ui/library-panel';
+import { openLibraryPanel, type LibraryTab } from '../ui/library-panel';
 import { openMaterialPicker } from '../ui/material-picker';
 import { closePanel, isPanelOpen, onPanelChange } from '../ui/panel';
 import { toast } from '../ui/toast';
@@ -50,9 +51,10 @@ export class Game {
   private lastActedCell: string | null = null;
   private hudTimer = 0;
   private frameWaiters: Array<() => void> = [];
+  private libraryTab: LibraryTab = 'mine';
 
   static async create(container: HTMLElement): Promise<Game> {
-    const library = new StructureLibrary();
+    const library = new StructureLibrary(buildExampleStructures());
     const worlds = new WorldStore();
     await library.open();
     await worlds.open();
@@ -325,18 +327,28 @@ export class Game {
 
   // ---- structure mode --------------------------------------------------------------------
 
-  async enterStructureMode(existing?: Structure): Promise<void> {
+  /** Opens the editor, optionally on an existing structure. Built-in examples always open as a copy. */
+  async enterStructureMode(existing?: Structure, opts: { asCopy?: boolean } = {}): Promise<void> {
     if (this.structureMode) return;
     closePanel();
     this.worldMode.cancelPlacing();
     this.worldPoseBackup = this.controls.getPose();
     this.worldMode.group.visible = false;
-    const sm = new StructureMode(this.materials, { hotbar: this.hotbar, ...(existing ? { existing } : {}) });
+    const asCopy = !!existing && (opts.asCopy ?? this.library.isExample(existing.id));
+    const sm = new StructureMode(this.materials, { hotbar: this.hotbar, asCopy, ...(existing ? { existing } : {}) });
     this.structureMode = sm;
     this.host.scene.add(sm.group);
     this.controls.setPose(sm.startPose());
     this.refreshHudChrome();
-    toast(existing ? `Editing "${existing.name}". Enter saves, Esc leaves.` : 'Structure mode: right click places, left click removes. Enter saves.', 'info', 3500);
+    toast(
+      !existing
+        ? 'Structure mode: right click places, left click removes. Enter saves.'
+        : asCopy
+          ? `Editing a copy of "${existing.name}". Enter saves it as a new structure, Esc leaves.`
+          : `Editing "${existing.name}". Enter saves, Esc leaves.`,
+      'info',
+      3500,
+    );
   }
 
   private leaveStructureMode(): void {
@@ -360,7 +372,7 @@ export class Game {
     }
     const name = await promptDialog('Save structure', {
       label: 'Name',
-      value: sm.editing?.name ?? `Structure ${this.library.size + 1}`,
+      value: sm.editing ? (sm.asCopy ? `${sm.editing.name} (copy)` : sm.editing.name) : `Structure ${this.library.size + 1}`,
       okLabel: 'Save',
     });
     if (name === null) return null;
@@ -389,7 +401,7 @@ export class Game {
     await this.library.save(s);
     this.hotbar = [...sm.hotbar];
     void this.worlds.setSetting('hotbar', this.hotbar);
-    const wasEditing = !!sm.editing;
+    const wasEditing = !!sm.editing && !sm.asCopy;
     this.leaveStructureMode();
     const size = s.voxels.size;
     if (wasEditing) {
@@ -422,12 +434,31 @@ export class Game {
 
   // ---- panels ----------------------------------------------------------------------------
 
-  openLibrary(): void {
+  /** Renders library thumbnails for built-in examples the first time they are needed. */
+  private ensureExampleThumbnails(): void {
+    for (const s of this.library.examples()) {
+      if (s.thumbnail) continue;
+      try {
+        s.thumbnail = renderThumbnail(this.host.renderer, this.cache.get(s), this.materials);
+      } catch (e) {
+        console.warn('example thumbnail failed', e);
+      }
+    }
+  }
+
+  openLibrary(tab?: LibraryTab): void {
     if (this.structureMode) return;
+    if (tab) this.libraryTab = tab;
+    this.ensureExampleThumbnails();
     const render = (): void => {
       openLibraryPanel(
-        this.library.all(),
+        { mine: this.library.all(), examples: this.library.examples(), describe: exampleDescription, tab: this.libraryTab },
         {
+          onTab: (t) => {
+            this.libraryTab = t;
+            render();
+          },
+          onEditCopy: (s) => void this.enterStructureMode(s, { asCopy: true }),
           onPlace: (s) => {
             closePanel();
             this.worldMode.startPlacing(s);
@@ -467,7 +498,6 @@ export class Game {
           },
           onNew: () => void this.enterStructureMode(),
         },
-        { canPlace: true },
       );
     };
     render();
@@ -622,7 +652,9 @@ export class Game {
     const sm = this.structureMode;
     this.hud.setHotbarVisible(!!sm);
     if (sm) {
-      this.hud.setMode(sm.editing ? `Structure mode — editing "${sm.editing.name}"` : 'Structure mode');
+      this.hud.setMode(
+        !sm.editing ? 'Structure mode' : sm.asCopy ? `Structure mode — copy of "${sm.editing.name}"` : `Structure mode — editing "${sm.editing.name}"`,
+      );
       this.hud.setHotbar(sm.hotbar, sm.selected);
       this.hud.structureBtn.textContent = 'Save structure (Enter)';
       this.hud.setHint('Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave');
@@ -684,7 +716,9 @@ export class Game {
       look: (dx, dy) => g.controls.look(dx, dy),
       act: (button) => g.act(button),
       key: (code, mods) => g.handleKey(code, mods),
-      enterStructureMode: (id) => g.enterStructureMode(id ? g.library.get(id) : undefined),
+      enterStructureMode: (id, asCopy) => g.enterStructureMode(id ? g.library.get(id) : undefined, asCopy === undefined ? {} : { asCopy }),
+      examples: () => g.library.examples().map((s) => ({ id: s.id, name: s.name, size: { ...s.voxels.size }, blocks: structureBlockCount(s), hasThumbnail: !!s.thumbnail })),
+      openLibrary: (tab) => g.openLibrary(tab),
       setVoxel: (x, y, z, material) => g.structureMode?.setVoxel({ x, y, z }, material) ?? false,
       fillBox: (min, max, material) => g.structureMode?.fillBox(min, max, material) ?? 0,
       hover: () => g.structureMode?.hover ?? null,
@@ -778,7 +812,10 @@ export interface GameDebug {
   look(dx: number, dy: number): void;
   act(button: number): boolean;
   key(code: string, mods?: { ctrl?: boolean; shift?: boolean }): boolean;
-  enterStructureMode(id?: string): Promise<void>;
+  /** Opens the editor; with an id, edits that structure (examples always as a copy unless `asCopy` says otherwise). */
+  enterStructureMode(id?: string, asCopy?: boolean): Promise<void>;
+  examples(): Array<{ id: string; name: string; size: { x: number; y: number; z: number }; blocks: number; hasThumbnail: boolean }>;
+  openLibrary(tab?: LibraryTab): void;
   setVoxel(x: number, y: number, z: number, material: string | null): boolean;
   fillBox(min: Vec3, max: Vec3, material: string | null): number;
   hover(): { voxel: Vec3 | null; place: Vec3 | null } | null;

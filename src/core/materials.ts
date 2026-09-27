@@ -32,6 +32,8 @@ export const MATERIALS: readonly MaterialDef[] = [
   { id: 'slate', name: 'Slate', color: '#3d4450', group: 'building' },
   { id: 'iron', name: 'Iron', color: '#c9c9cf', group: 'building' },
   { id: 'gold', name: 'Gold', color: '#e8c34a', group: 'building' },
+  { id: 'bronze', name: 'Bronze', color: '#8d6e4f', group: 'building' },
+  { id: 'limestone', name: 'Limestone', color: '#d9d0b9', group: 'building' },
   { id: 'glass', name: 'Glass', color: '#a8d8f0', transparent: true, group: 'special' },
   { id: 'lantern', name: 'Lantern', color: '#ffd27a', emissive: true, group: 'special' },
   { id: 'white', name: 'White', color: '#f2f2f2', group: 'color' },

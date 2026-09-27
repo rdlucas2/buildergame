@@ -8,6 +8,9 @@ to every material, and share what you make as files that anyone can drop into th
 - **World mode** — fly around your world and place structures from your library. Structures snap to the
   grid, rotate in quarter turns, stack on each other, and can never overlap (voxel-precise collision
   with a green/red preview).
+- **Examples** — the library's Examples tab has ready-made structures to place: a cottage, a
+  farmhouse, a modern house, the Eiffel Tower and the Arc de Triomphe. Editing one saves your own
+  copy; the built-in original never changes. They are defined in code under `src/examples/`.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 

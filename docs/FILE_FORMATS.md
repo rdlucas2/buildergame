@@ -39,7 +39,7 @@ the tight bounding box of the blocks it contains, so a saved structure never has
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Stable identifier (UUID). Worlds reference structures by this id. |
+| `id` | Stable identifier, normally a UUID. Built-in examples use fixed ids such as `example-eiffel-tower`. Worlds reference structures by this id. |
 | `size` | Extent along x, y, z. Each edge is at least 1; the in-game editor allows up to 128. |
 | `palette` | Materials used, in first-use order. Voxel value `v` (1-based) refers to `palette[v-1]`; `0` is air. The colour is stored so a file still renders on a machine whose material list does not know that material id. |
 | `voxels.order` | `xzy`: x varies fastest, then z, then y. Index = `x + size.x * (z + size.z * y)`. |

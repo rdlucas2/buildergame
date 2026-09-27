@@ -41,6 +41,8 @@ export class StructureMode {
   selected = 0;
   readonly undo = new UndoStack(1000);
   readonly editing: Structure | null;
+  /** When true, saving creates a new structure instead of updating `editing` (used for examples). */
+  readonly asCopy: boolean;
   hover: HoverState = { voxel: null, place: null };
 
   private readonly mesh: ChunkedGridMesh;
@@ -52,9 +54,10 @@ export class StructureMode {
 
   constructor(
     private readonly materials: VoxelMaterials,
-    opts: { existing?: Structure; hotbar?: string[] } = {},
+    opts: { existing?: Structure; hotbar?: string[]; asCopy?: boolean } = {},
   ) {
     this.editing = opts.existing ?? null;
+    this.asCopy = !!opts.asCopy && !!opts.existing;
     this.hotbar = [...(opts.hotbar ?? DEFAULT_HOTBAR)];
     const existing = opts.existing;
     const need = existing ? existing.voxels.size : { x: 1, y: 1, z: 1 };
@@ -219,10 +222,10 @@ export class StructureMode {
     const base = this.editing;
     const raw = createStructure({
       name,
-      author: author || base?.author || '',
+      author: author || (this.asCopy ? '' : base?.author) || '',
       voxels: this.grid,
       palette: this.palette,
-      ...(base ? { id: base.id, createdAt: base.createdAt } : {}),
+      ...(base && !this.asCopy ? { id: base.id, createdAt: base.createdAt } : {}),
     });
     return normalizeStructure(raw);
   }
