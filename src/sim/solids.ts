@@ -21,9 +21,28 @@ function chunkKey(cx: number, cz: number): number {
  * Built lazily in 16×16 column chunks from the placements and invalidated only where placements
  * change, so movement queries stay cheap even with thousands of structures.
  */
+/** Blocks that aren't placements, such as a defense warren that predators can break. */
+export interface SolidLayer {
+  solidAt(x: number, y: number, z: number): boolean;
+  /** True when the column holds any block of the layer. */
+  columnCovered(x: number, z: number): boolean;
+  containsColumn(x: number, z: number): boolean;
+  readonly origin: { x: number; z: number };
+  readonly size: { x: number; y: number; z: number };
+  /** Changes whenever a block of the layer appears or disappears. */
+  readonly shape: number;
+}
+
+/** Bounds of something solid, with a key that changes when its blocks do. */
+export interface SolidExtent {
+  box: AABB;
+  key: string;
+}
+
 export class SolidMap {
   readonly index: WorldIndex;
   private readonly chunks = new Map<number, Chunk>();
+  private base: SolidLayer | null = null;
 
   constructor(lookup: (id: string) => Structure | undefined) {
     this.index = new WorldIndex(lookup);
@@ -47,9 +66,29 @@ export class SolidMap {
     this.invalidate(b);
   }
 
+  /** Adds (or removes) a layer of blocks checked alongside the placements. */
+  setBase(layer: SolidLayer | null): void {
+    this.base = layer;
+  }
+
+  /** Bounds of everything solid that isn't the ground: each placement, and the base layer's area. */
+  extents(): SolidExtent[] {
+    const out: SolidExtent[] = [];
+    for (const p of this.index.all()) {
+      const b = this.index.boundsOf(p.id);
+      if (b) out.push({ box: b, key: p.id });
+    }
+    if (this.base) {
+      const { origin: o, size: s } = this.base;
+      out.push({ box: { min: { x: o.x, y: 0, z: o.z }, max: { x: o.x + s.x, y: s.y, z: o.z + s.z } }, key: `base:${this.base.shape}` });
+    }
+    return out;
+  }
+
   /** True for the ground (y < 0) and for any placed block. */
   solid(x: number, y: number, z: number): boolean {
     if (y < 0) return true;
+    if (this.base && this.base.solidAt(x, y, z)) return true;
     const c = this.chunk(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
     if (y >= c.height) return false;
     const lx = x - Math.floor(x / CHUNK) * CHUNK;
@@ -59,6 +98,7 @@ export class SolidMap {
 
   /** True when no placement reaches into the column (x, z) at all: plain open ground. */
   openColumn(x: number, z: number): boolean {
+    if (this.base && this.base.containsColumn(x, z) && this.base.columnCovered(x, z)) return false;
     const c = this.chunk(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
     if (c.height === 0) return true;
     const lx = x - Math.floor(x / CHUNK) * CHUNK;

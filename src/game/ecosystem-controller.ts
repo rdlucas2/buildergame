@@ -1,17 +1,23 @@
 import { LineBasicMaterial, Vector3 } from 'three';
 import { rayPlaneY } from '../core/raycast';
-import type { CreatureSpecies, EcosystemState, Placement, World } from '../core/world';
+import type { DefenseStats } from '../core/defense-state';
+import type { CreatureKind, CreatureSpecies, EcosystemState, Placement, RabbitRole, World } from '../core/world';
 import { CreatureView } from '../render/creature-view';
+import { DefenseView } from '../render/defense-view';
 import { OutlineBox } from '../render/highlight';
 import type { SceneHost } from '../render/scene';
+import type { VoxelMaterials } from '../render/voxel-materials';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
 import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
-import { SPECIES, describeActivity, pickCreature, type Activity, type Creature } from '../sim/creatures';
+import { SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
+import type { Defense, DefenseAction, ActionResult } from '../sim/defense/defense';
 import { Ecosystem, PACK_SIZE } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
+import { countOf, DefenseHud } from '../ui/defense-hud';
 import { EcosystemHud, openNaturePanel } from '../ui/ecosystem-hud';
 import { toast } from '../ui/toast';
+import { FortifyTool } from './fortify-tool';
 import type { WorldMode } from './world-mode';
 
 /** Seconds of real time between repaints of the terrain while the simulation runs. */
@@ -20,8 +26,6 @@ const REPAINT_INTERVAL = 1;
 const CREATURE_REACH = 64;
 /** Creatures released at a time from the Nature panel: a few rabbits, or a wolf pack. */
 export const RELEASE_COUNT: Record<CreatureSpecies, number> = { prey: 5, predator: PACK_SIZE };
-/** Outline drawn around the creature under the crosshair: half-width and height. */
-const HOVER_BOX: Record<CreatureSpecies, [number, number]> = { prey: [0.42, 0.85], predator: [0.55, 1.35] };
 
 /**
  * Runs the ecosystem of the current world when it is wild: owns the simulation, the ground view,
@@ -38,24 +42,43 @@ export class EcosystemController {
   private readonly tmpDir = new Vector3();
   private readonly acc = new TickAccumulator();
   private readonly hud: EcosystemHud;
+  private readonly defenseHud: DefenseHud;
+  private defenseView: DefenseView | null = null;
+  /** Building and breaking the warren's blocks (Warren Defense only). */
+  readonly fortify = new FortifyTool();
   private repaintTimer = 0;
   private litBySim = false;
   speed: Speed = 1;
   overlay: Overlay = 'none';
   /** Called when the player changes something worth saving (speed and overlay are not saved). */
   onActivity?: () => void;
+  /** Warren Defense: the round was lost (the game shows the summary). */
+  onRoundOver?: () => void;
+  /** Warren Defense: the Fortify button was pressed. */
+  onToggleFortify?: () => void;
 
   constructor(
     private readonly host: SceneHost,
     private readonly worldMode: WorldMode,
     private readonly library: StructureLibrary,
     container: HTMLElement,
+    private readonly materials: VoxelMaterials,
   ) {
     this.hoverBox.object.name = 'creature-hover';
     this.hud = new EcosystemHud(container, {
       onSpeed: (s) => this.setSpeed(s),
       onNature: () => this.openPanel(),
     });
+    this.defenseHud = new DefenseHud(container, {
+      onCallWave: () => this.report(this.applyDefense({ type: 'callWave' }), 'The next wave is on its way.'),
+      onBuyBudget: () => this.report(this.applyDefense({ type: 'buyBudget' }), 'Block budget raised by 100.'),
+      onAllocate: (delta) => {
+        const d = this.defense;
+        if (d) this.applyDefense({ type: 'allocate', defenders: d.allocation + delta });
+      },
+      onFortify: () => this.onToggleFortify?.(),
+    });
+    worldMode.group.add(this.fortify.group);
     const lookup = (id: string) => this.library.get(id);
     worldMode.onPlacementAdded = (p: Placement) => {
       this.eco?.placementAdded(p, lookup);
@@ -79,6 +102,24 @@ export class EcosystemController {
     return this.eco;
   }
 
+  /** The Warren Defense round of the current world, if it is one. */
+  get defense(): Defense | null {
+    return this.eco?.defense ?? null;
+  }
+
+  /** Applies a defense action (from the HUD, Fortify mode or a bot) and refreshes what it changed. */
+  applyDefense(action: DefenseAction): ActionResult {
+    const d = this.defense;
+    if (!d) return { ok: false, reason: 'Not a Warren Defense world.' };
+    const r = d.apply(action);
+    if (r.ok) this.onActivity?.();
+    return r;
+  }
+
+  private report(r: ActionResult, success: string): void {
+    toast(r.ok ? success : (r.reason ?? 'Not possible right now.'), r.ok ? 'success' : 'error', 1800);
+  }
+
   /** Starts (or keeps) the ecosystem for a world; stops it for plain worlds. */
   attach(world: World): void {
     if (!world.ecosystem) {
@@ -100,9 +141,21 @@ export class EcosystemController {
     this.creatureView = new CreatureView();
     this.worldMode.group.add(this.creatureView.group, this.hoverBox.object);
     this.creatureView.update(this.eco.population.creatures, 1);
+    if (this.eco.defense) {
+      this.defenseView = new DefenseView(this.eco.defense.base, this.eco.defense.combat, this.materials);
+      this.worldMode.group.add(this.defenseView.group);
+      this.defenseHud.setVisible(true);
+      document.body.classList.add('defense');
+    }
     this.acc.reset();
     this.hud.setVisible(true);
     document.body.classList.add('wild');
+  }
+
+  /** Throws away the current round and attaches the world afresh (a new round in the same world). */
+  reattach(world: World): void {
+    this.detach();
+    this.attach(world);
   }
 
   detach(): void {
@@ -116,6 +169,14 @@ export class EcosystemController {
       this.creatureView.dispose();
     }
     this.creatureView = null;
+    if (this.defenseView) {
+      this.worldMode.group.remove(this.defenseView.group);
+      this.defenseView.dispose();
+    }
+    this.defenseView = null;
+    this.fortify.setActive(false, null);
+    this.defenseHud.setVisible(false);
+    document.body.classList.remove('defense');
     this.hoverBox.hide();
     this.hoveredId = null;
     this.eco = null;
@@ -142,8 +203,10 @@ export class EcosystemController {
       }
     }
     this.view?.update();
-    this.creatureView?.update(eco.population.creatures, this.speed === 0 ? 1 : this.acc.alpha);
-    this.updateHover(editing);
+    const alpha = this.speed === 0 ? 1 : this.acc.alpha;
+    this.creatureView?.update(eco.population.creatures, alpha, this.host.camera);
+    this.defenseView?.update(realDt, alpha);
+    this.updateHover(editing || this.fortify.active);
     if (editing) {
       if (this.litBySim) this.host.resetDaylight();
       this.litBySim = false;
@@ -155,6 +218,33 @@ export class EcosystemController {
     this.hud.update(eco.time, this.speed, eco.population.count('prey'), eco.population.count('predator'));
     for (const e of eco.events.splice(0)) {
       if (e.kind === 'pack') toast(`A pack of ${e.count} wolves has arrived. Rabbits are only safe where wolves can't follow: behind a 1-high gap, or walls 3 blocks high.`, 'info', 7000);
+    }
+    const d = eco.defense;
+    if (d) {
+      this.defenseHud.setVisible(!editing);
+      this.defenseHud.update({
+        clock: d.clock,
+        wave: d.wave,
+        nextWaveIn: d.nextWaveIn,
+        points: d.points,
+        cost: d.base.cost(),
+        budget: d.budget,
+        budgetPrice: d.budgetPrice,
+        defenders: eco.population.creatures.filter((c) => c.role === 'defender' && c.deadFor < 0).length,
+        breeders: eco.population.creatures.filter((c) => c.species === 'prey' && c.role !== 'defender' && c.deadFor < 0).length,
+        allocation: d.allocation,
+        predators: eco.population.count('predator'),
+        fortifying: this.fortify.active,
+        over: d.over,
+      });
+      for (const e of d.events.splice(0)) {
+        if (e.kind === 'wave') {
+          const parts = Object.entries(e.counts).map(([k, n]) => countOf(k, n));
+          toast(`Wave ${e.n}: ${parts.join(', ')}`, 'info', 3500);
+        } else if (e.kind === 'lost') {
+          this.onRoundOver?.();
+        }
+      }
     }
   }
 
@@ -170,8 +260,8 @@ export class EcosystemController {
       if (hit) {
         const c = hit.creature;
         this.hoveredId = c.id;
-        const [r, h] = HOVER_BOX[c.species];
-        this.hoverBox.setBox({ x: c.x - r, y: c.y, z: c.z - r }, { x: r * 2, y: h, z: r * 2 });
+        const [r, h] = defOf(c).box;
+        this.hoverBox.setBox({ x: c.x - r - 0.05, y: c.y, z: c.z - r - 0.05 }, { x: r * 2 + 0.1, y: h + 0.05, z: r * 2 + 0.1 });
         return;
       }
     }
@@ -190,9 +280,13 @@ export class EcosystemController {
     const c = this.hovered();
     if (!c) return null;
     const pct = (v: number) => `${Math.round(v * 100)}%`;
-    const def = SPECIES[c.species];
+    const def = defOf(c);
+    if (this.defense && c.species === 'predator') {
+      return `${def.name} · ${describeActivity(c)} · health ${Math.ceil(c.health * maxHpOf(c))}/${maxHpOf(c)}`;
+    }
     const age = c.age < def.maturity ? 'young' : `${(c.age / DAY_SECONDS).toFixed(1)} days old`;
-    return `${def.name} (${age}) · ${describeActivity(c)} · food ${pct(c.satiety)} · water ${pct(c.hydration)} · energy ${pct(c.energy)} · health ${pct(c.health)}`;
+    const role = c.role ? ` ${c.role === 'defender' ? 'defender' : 'breeder'}` : '';
+    return `${def.name}${role} (${age}) · ${describeActivity(c)} · food ${pct(c.satiety)} · water ${pct(c.hydration)} · energy ${pct(c.energy)} · health ${pct(c.health)}`;
   }
 
   /**
@@ -218,6 +312,36 @@ export class EcosystemController {
     return n;
   }
 
+  /** A summary of the Warren Defense round (tests, debugging and bots), or null. */
+  defenseInfo(): DefenseInfo | null {
+    const eco = this.eco;
+    const d = eco?.defense;
+    if (!eco || !d) return null;
+    const rabbits = eco.population.creatures.filter((c) => c.species === 'prey' && c.deadFor < 0);
+    return {
+      clock: d.clock,
+      wave: d.wave,
+      nextWaveIn: d.nextWaveIn,
+      points: d.points,
+      score: d.score,
+      budget: d.budget,
+      cost: d.base.cost(),
+      blocks: d.base.blocks(),
+      budgetPrice: d.budgetPrice,
+      allocation: d.allocation,
+      defenders: rabbits.filter((c) => c.role === 'defender').length,
+      breeders: rabbits.filter((c) => c.role !== 'defender').length,
+      predators: eco.population.count('predator'),
+      outcome: d.outcome,
+      site: { ...d.site },
+      origin: { ...d.base.origin },
+      posts: d.base.posts().map((p) => ({ ...p })),
+      damaged: d.base.damaged().length,
+      stats: structuredClone(d.stats),
+      fortifying: this.fortify.active,
+    };
+  }
+
   /** Living creatures (tests and debugging). */
   creatures(): CreatureInfo[] {
     if (!this.eco) return [];
@@ -235,6 +359,8 @@ export class EcosystemController {
         energy: c.energy,
         health: c.health,
         age: c.age,
+        kind: kindOf(c),
+        role: c.role ?? null,
       }));
   }
 
@@ -371,6 +497,29 @@ export interface EcosystemInfo {
   historyLength: number;
 }
 
+export interface DefenseInfo {
+  clock: number;
+  wave: number;
+  nextWaveIn: number;
+  points: number;
+  score: number;
+  budget: number;
+  cost: number;
+  blocks: number;
+  budgetPrice: number;
+  allocation: number;
+  defenders: number;
+  breeders: number;
+  predators: number;
+  outcome: string;
+  site: { x: number; z: number };
+  origin: { x: number; z: number };
+  posts: Array<{ x: number; y: number; z: number }>;
+  damaged: number;
+  stats: DefenseStats;
+  fortifying: boolean;
+}
+
 export interface CreatureInfo {
   id: number;
   species: CreatureSpecies;
@@ -383,6 +532,8 @@ export interface CreatureInfo {
   energy: number;
   health: number;
   age: number;
+  kind: CreatureKind;
+  role: RabbitRole | null;
 }
 
 export interface EcosystemCell {

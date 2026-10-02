@@ -233,8 +233,33 @@ body.touch.wild .toasts { top: calc(96px + env(safe-area-inset-top)); }
   body.touch .eco-strip { top: calc(160px + env(safe-area-inset-top)); }
   body.touch.wild .toasts { top: calc(252px + env(safe-area-inset-top)); }
 }
+/* Warren Defense strip, under the time strip. */
+.def-strip {
+  position: absolute; top: 58px; left: 50%; transform: translateX(-50%); z-index: 4;
+  display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 12px; border-radius: 999px;
+  background: rgba(30,16,10,0.72); border: 1px solid rgba(255,200,140,0.25); color: #fff; font-size: 13px;
+  font-variant-numeric: tabular-nums; pointer-events: auto; user-select: none; white-space: nowrap;
+}
+@media (max-width: 1500px) { .def-strip { top: 102px; } }
+body.defense #eco-wolves { display: none !important; }
+.def-group { display: inline-flex; align-items: center; gap: 4px; }
+.def-clock { font-weight: 700; min-width: 58px; }
+.def-btn { font: inherit; font-size: 12px; cursor: pointer; border: none; color: #ffe7cf; background: rgba(255,255,255,0.1); padding: 5px 9px; border-radius: 999px; }
+.def-btn:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
+.def-btn:disabled { opacity: 0.45; cursor: default; }
+.def-step { padding: 4px 9px; font-weight: 700; }
+.def-fortify { background: rgba(232,160,64,0.35); font-weight: 600; }
+.def-fortify.active { background: #e8a040; color: #2a1606; }
+body.touch .def-strip { top: calc(96px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); transform: none; font-size: 12px; }
+@media (orientation: portrait) {
+  body.touch .def-strip { top: calc(258px + env(safe-area-inset-top)); }
+  body.touch.wild.defense .toasts { top: calc(350px + env(safe-area-inset-top)); }
+}
+body.touch.wild.defense .toasts { top: calc(140px + env(safe-area-inset-top)); }
+
 /* Narrow screens: the counts and the speed buttons wrap onto a second row instead of running off. */
 @media (max-width: 560px) {
+  .def-strip { flex-wrap: wrap; row-gap: 4px; max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); border-radius: 18px; }
   .eco-strip { flex-wrap: wrap; row-gap: 4px; max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); border-radius: 18px; }
   .eco-clock { min-width: 0; }
 }
@@ -257,3 +282,5 @@ body.touch.wild .toasts { top: calc(96px + env(safe-area-inset-top)); }
 .stat { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
 .stat-value { font-size: 16px; font-weight: 600; margin-top: 2px; }
 .tag.wild { background: rgba(74,163,255,0.2); color: #9fd0ff; }
+.tag.defense { background: rgba(232,160,64,0.22); color: #ffd39a; }
+.kind-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }

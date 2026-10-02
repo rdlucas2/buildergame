@@ -18,7 +18,16 @@ export interface Cell {
   z: number;
 }
 
-const DIRS: ReadonlyArray<[number, number, number]> = [
+/** A path step; `breach` marks a cell whose blocks must be broken before it can be entered. */
+export interface BreachCell extends Cell {
+  breach?: boolean;
+}
+
+/** Cost of breaking the block at (x, y, z), or null when it can't be broken. */
+export type BreachCost = (x: number, y: number, z: number) => number | null;
+
+/** The eight directions a creature can step in, with the base cost of each step. */
+export const MOVE_DIRS: ReadonlyArray<[number, number, number]> = [
   [1, 0, 1],
   [-1, 0, 1],
   [0, 1, 1],
@@ -43,6 +52,10 @@ function key(x: number, y: number, z: number): number {
  * most `drop` cells.
  */
 export class Navigator {
+  /** Where the last successful `stepTo` landed, and whether it was a breach. */
+  landY = 0;
+  landBreach = false;
+
   constructor(
     readonly solids: SolidMap,
     readonly terrain: Terrain,
@@ -107,26 +120,66 @@ export class Navigator {
   /**
    * Calls `visit` for every position a body standing at `c` can move to in one step (eight
    * directions, never cutting a corner), with the cost of the step.
+   *
+   * With `breach`, a straight step into blocks that `breach` can break (it returns a cost for each
+   * such block, or null when the block can't be broken) is allowed too, costing the sum of those
+   * costs: the creature will have to break through first. Such steps are reported with `breach`.
    */
-  forEachMove(c: Cell, body: Body, visit: (x: number, y: number, z: number, cost: number) => void): void {
-    for (const [dx, dz, base] of DIRS) {
-      if (dx !== 0 && dz !== 0) {
-        // No cutting corners: both side cells must be passable at this height.
-        if (this.landing(c.x, c.y, c.z, c.x + dx, c.z, body) !== c.y || this.landing(c.x, c.y, c.z, c.x, c.z + dz, body) !== c.y) continue;
-      }
-      const nx = c.x + dx;
-      const nz = c.z + dz;
-      const ny = this.landing(c.x, c.y, c.z, nx, nz, body);
-      if (ny === null) continue;
-      visit(nx, ny, nz, base * (ny === 0 && this.isWater(nx, nz) ? WATER_COST : 1) + (ny > c.y ? 0.5 : 0));
+  forEachMove(c: Cell, body: Body, visit: (x: number, y: number, z: number, cost: number, breach?: boolean) => void, breach?: BreachCost): void {
+    for (const [dx, dz, base] of MOVE_DIRS) {
+      const cost = this.stepTo(c, dx, dz, base, body, breach);
+      if (cost >= 0) visit(c.x + dx, this.landY, c.z + dz, cost, this.landBreach || undefined);
     }
+  }
+
+  /**
+   * The one step from `c` in direction (dx, dz) (see `forEachMove`): its cost, or -1 when there is
+   * none. On success `landY` holds the height it lands at and `landBreach` whether it breaks in.
+   */
+  stepTo(c: Cell, dx: number, dz: number, base: number, body: Body, breach?: BreachCost): number {
+    if (dx !== 0 && dz !== 0) {
+      // No cutting corners: both side cells must be passable at this height.
+      if (this.landing(c.x, c.y, c.z, c.x + dx, c.z, body) !== c.y || this.landing(c.x, c.y, c.z, c.x, c.z + dz, body) !== c.y) return -1;
+    }
+    const nx = c.x + dx;
+    const nz = c.z + dz;
+    const ny = this.landing(c.x, c.y, c.z, nx, nz, body);
+    if (ny !== null) {
+      this.landY = ny;
+      this.landBreach = false;
+      return base * (ny === 0 && this.isWater(nx, nz) ? WATER_COST : 1) + (ny > c.y ? 0.5 : 0);
+    }
+    if (!breach || (dx !== 0 && dz !== 0)) return -1;
+    const extra = this.breachInto(nx, c.y, nz, body, breach);
+    if (extra === null) return -1;
+    this.landY = c.y;
+    this.landBreach = true;
+    return base + extra;
+  }
+
+  /**
+   * Cost of breaking into the cell at (x, y, z) at the same height: every solid block in the body's
+   * way must be breakable and there must be floor to stand on. Null when it can't be done.
+   */
+  breachInto(x: number, y: number, z: number, body: Body, breach: BreachCost): number | null {
+    if (!this.inBounds(x, z) || !this.solids.solid(x, y - 1, z)) return null;
+    let total = 0;
+    let blocked = false;
+    for (let i = 0; i < body.height; i++) {
+      if (!this.solids.solid(x, y + i, z)) continue;
+      const cost = breach(x, y + i, z);
+      if (cost === null) return null;
+      total += cost;
+      blocked = true;
+    }
+    return blocked ? total : null;
   }
 
   /**
    * A* from `start` to `goal` (or to any cell `isGoal` accepts). Explores at most `maxNodes` cells
    * and returns the path (excluding the start) or null when no path is found within the budget.
    */
-  findPath(start: Cell, goal: Cell, body: Body, maxNodes = 2000, isGoal?: (c: Cell) => boolean): Cell[] | null {
+  findPath(start: Cell, goal: Cell, body: Body, maxNodes = 2000, isGoal?: (c: Cell) => boolean, breach?: BreachCost): BreachCell[] | null {
     const reached = isGoal ?? ((c: Cell) => c.x === goal.x && c.z === goal.z && Math.abs(c.y - goal.y) <= body.climb);
     const h = (x: number, y: number, z: number) => {
       const dx = Math.abs(x - goal.x);
@@ -136,7 +189,7 @@ export class Navigator {
     const open = new MinHeap();
     const g = new Map<number, number>();
     const came = new Map<number, number>();
-    const cells = new Map<number, Cell>();
+    const cells = new Map<number, BreachCell>();
     const sk = key(start.x, start.y, start.z);
     g.set(sk, 0);
     cells.set(sk, start);
@@ -148,22 +201,27 @@ export class Navigator {
       if (k !== sk && reached(c)) return this.rebuild(came, cells, k, sk);
       expanded++;
       const gc = g.get(k)!;
-      this.forEachMove(c, body, (nx, ny, nz, step) => {
-        const nk = key(nx, ny, nz);
-        const ng = gc + step;
-        const prev = g.get(nk);
-        if (prev !== undefined && prev <= ng) return;
-        g.set(nk, ng);
-        came.set(nk, k);
-        if (!cells.has(nk)) cells.set(nk, { x: nx, y: ny, z: nz });
-        open.push(nk, ng + h(nx, ny, nz));
-      });
+      this.forEachMove(
+        c,
+        body,
+        (nx, ny, nz, step, broken) => {
+          const nk = key(nx, ny, nz);
+          const ng = gc + step;
+          const prev = g.get(nk);
+          if (prev !== undefined && prev <= ng) return;
+          g.set(nk, ng);
+          came.set(nk, k);
+          if (!cells.has(nk)) cells.set(nk, broken ? { x: nx, y: ny, z: nz, breach: true } : { x: nx, y: ny, z: nz });
+          open.push(nk, ng + h(nx, ny, nz));
+        },
+        breach,
+      );
     }
     return null;
   }
 
-  private rebuild(came: Map<number, number>, cells: Map<number, Cell>, end: number, start: number): Cell[] {
-    const out: Cell[] = [];
+  private rebuild(came: Map<number, number>, cells: Map<number, BreachCell>, end: number, start: number): BreachCell[] {
+    const out: BreachCell[] = [];
     let k: number | undefined = end;
     while (k !== undefined && k !== start) {
       out.push(cells.get(k)!);
@@ -174,7 +232,7 @@ export class Navigator {
 }
 
 /** Binary min-heap of numeric keys by priority. */
-class MinHeap {
+export class MinHeap {
   private keys: number[] = [];
   private pri: number[] = [];
 

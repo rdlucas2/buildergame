@@ -1,7 +1,10 @@
 import type { Structure } from '../core/structure';
+import { NO_MODIFIERS, type DefenseModifiers } from '../core/defense-state';
 import type { CreatureSpecies, EcosystemState, Placement } from '../core/world';
 import { DAY_SECONDS, START_TIME, TICK_SECONDS, daylight } from './clock';
 import { Population, SPECIES, type Tally } from './creatures';
+import { Defense } from './defense/defense';
+import { buildStarterWarren, chooseWarrenSite, createBase } from './defense/starter';
 import { Navigator } from './navigation';
 import { Rng, hash3 } from './rng';
 import { SafetyMap } from './safety';
@@ -45,6 +48,8 @@ export class Ecosystem {
   packTimer: number;
   /** Things worth telling the player about, collected until the view drains them. */
   events: EcosystemEvent[] = [];
+  /** The Warren Defense round, in defense worlds. */
+  defense: Defense | null = null;
   private lookup: StructureLookup = () => undefined;
   /** Worlds saved before creatures existed get their starter herd once placements are known. */
   private herdPending: boolean;
@@ -69,12 +74,30 @@ export class Ecosystem {
       for (const k of Object.keys(t) as Array<keyof Tally>) if (Number.isFinite(state.tally[k])) t[k] = state.tally[k];
     }
     this.herdPending = state.creatures === undefined;
+    if (state.defense) {
+      this.defense = new Defense(this, state.defense);
+      this.herdPending = false;
+    }
   }
 
-  /** A brand-new wild world starting in the morning, with a herd of rabbits near water. */
-  static create(size: number, seed: number): Ecosystem {
-    const e = new Ecosystem(size, { seed, time: START_TIME });
-    e.spawnStarterHerd();
+  /**
+   * A brand-new wild world starting in the morning, with a herd of rabbits near water. With
+   * `defense`, it is a Warren Defense round instead: the herd starts inside a walled warren and
+   * waves of predators come for it.
+   */
+  static create(size: number, seed: number, opts: { defense?: Partial<DefenseModifiers> } = {}): Ecosystem {
+    if (!opts.defense) {
+      const e = new Ecosystem(size, { seed, time: START_TIME });
+      e.spawnStarterHerd();
+      return e;
+    }
+    const e = new Ecosystem(size, { seed, time: START_TIME, creatures: [] });
+    const modifiers = { ...NO_MODIFIERS, ...opts.defense };
+    const site = chooseWarrenSite(e.terrain, e.shores);
+    const base = createBase(site);
+    buildStarterWarren(base, site);
+    e.defense = new Defense(e, Defense.initialState(site, base, modifiers));
+    e.population.spawnGroup('prey', site.x, site.z, STARTER_HERD + modifiers.rabbits, 5);
     return e;
   }
 
@@ -124,7 +147,8 @@ export class Ecosystem {
     this.ticks++;
     this.vegetation.tick(daylight(this.time));
     this.population.tick(this.time);
-    this.wolves();
+    if (this.defense) this.defense.tick();
+    else this.wolves();
   }
 
   /** Wolves wander in from far away once there have been none for a while (and there is prey). */
@@ -202,6 +226,7 @@ export class Ecosystem {
       history: p.history.map(([t, a, b]) => [t, a, b]),
       tally: { ...p.tally },
       packTimer: Math.round(this.packTimer * 10) / 10,
+      ...(this.defense ? { defense: this.defense.toState() } : {}),
     };
   }
 }

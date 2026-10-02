@@ -100,7 +100,7 @@ even interleave, as with two L-shapes).
 
 ### Wild worlds (version 2)
 
-A world created with the **Wild world** option is written as `"version": 2` with an extra
+A world created with the **Wild** option is written as `"version": 2` with an extra
 `ecosystem` block. Plain worlds are still written as version 1, and readers accept both. A wild
 world's `ground.size` can be at most 2048.
 
@@ -141,6 +141,62 @@ placed block) and there is headroom for the creature's height. Rabbits are 1 blo
 1 block, drop up to 3, and wade slowly through water. Wolves (`predator`) are 2 blocks tall. They
 leap up to 2 blocks and drop up to 3. Only the saved fields above are stored. What each
 creature is doing and where it is heading is worked out again after loading.
+
+### Warren Defense worlds (version 3)
+
+A **Warren Defense** world is a wild world with a round in progress. It is written as
+`"version": 3`, and its `ecosystem` block gains a `defense` object. Wild worlds without a round are
+still written as version 2. Creatures gain three optional fields:
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | Which animal: `rabbit`, `wolf`, `fox`, `badger`, `bear`, `tiger` or `hawk`. When missing, `prey` is a rabbit and `predator` a wolf. |
+| `role` | Rabbits in a round: `defender` or `breeder`. |
+| `maxHp` | Hit points at full `health`, when a wave scaled it up from the kind's normal value. |
+
+```json
+"defense": {
+  "site": { "x": -40, "z": 12 },
+  "base": {
+    "origin": { "x": -64, "z": -12 },
+    "size": { "x": 48, "y": 16, "z": 48 },
+    "palette": ["cobblestone", "planks", "lookout"],
+    "voxels": { "encoding": "rle-u16-base64", "data": "…" },
+    "damage": { "encoding": "rle-u16-base64", "data": "…" }
+  },
+  "clock": 312.4,
+  "wave": 6,
+  "nextWaveAt": 360,
+  "orders": [{ "at": 305, "kind": "wolf", "count": 2, "angle": 2.1, "hpScale": 1.25 }],
+  "points": 140,
+  "score": 620,
+  "budget": 800,
+  "budgetBuys": 1,
+  "allocation": 5,
+  "stats": { "kills": 31, "killsWith": { "slingshot": 31 }, "killsOf": { "fox": 27, "wolf": 4 },
+             "rabbitsLost": 3, "blocksBroken": 9, "shots": 402 },
+  "outcome": "playing",
+  "modifiers": { "budget": 0, "rabbits": 0, "blockHp": 1, "damage": 1, "armour": 1, "fertility": 1 }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `site` | The warren's centre, a world cell. |
+| `base` | The warren's blocks: a voxel volume like a structure's, anchored with its min corner at world cell `(origin.x, 0, origin.z)`. Voxel value `v` refers to material `palette[v-1]`, and `0` is air. The layout and encoding are the same as structure voxels (order `xzy`). |
+| `base.damage` | Damage each block has taken, in tenths of a hit point, in the same layout and encoding. A block's hit points come from its material's tier, so they are not stored. |
+| `clock` | Simulation seconds the round has lasted. |
+| `wave`, `nextWaveAt` | Waves started so far, and the round time of the next one. |
+| `orders` | Predator groups still to arrive: when, which kind, how many, the direction they come from (radians, from the warren) and a hit-point multiplier. |
+| `points`, `score` | Points left to spend, and the total ever earned. |
+| `budget`, `budgetBuys` | The block budget limit, and how many increases were bought (each costs more than the last). |
+| `allocation` | How many rabbits should be defenders. |
+| `stats` | Round totals: kills (overall, by weapon and by predator kind), rabbits lost, blocks broken and shots fired. |
+| `outcome` | `playing`, or `lost` once no rabbits are left. |
+| `modifiers` | Bonuses the round started with, stored so a reload plays on with the same numbers: extra `budget` and `rabbits`, and multipliers on block hit points, defender damage, bite damage taken (`armour`) and breeding (`fertility`). |
+
+Readers must check that both decoded volumes hold `size.x * size.y * size.z` values and that no voxel
+value exceeds the palette length.
 
 ## World bundle: `*.world.zip`
 
