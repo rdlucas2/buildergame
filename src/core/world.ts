@@ -46,11 +46,22 @@ export interface EcosystemState {
 }
 
 export type CreatureSpecies = 'prey' | 'predator';
+/** The particular animal. Rabbits are prey; every other kind is a predator. */
+export type CreatureKind = 'rabbit' | 'wolf' | 'fox' | 'badger' | 'bear' | 'tiger' | 'hawk';
+export const CREATURE_KINDS: readonly CreatureKind[] = ['rabbit', 'wolf', 'fox', 'badger', 'bear', 'tiger', 'hawk'];
+/** What a rabbit does in a Warren Defense world. */
+export type RabbitRole = 'breeder' | 'defender';
 
 /** The saved state of one living creature (behaviour and paths are recomputed on load). */
 export interface CreatureState {
   id: number;
   species: CreatureSpecies;
+  /** Missing in older files: rabbits for prey, wolves for predators. */
+  kind?: CreatureKind;
+  /** Warren Defense only. */
+  role?: RabbitRole;
+  /** Hit points at full health when they differ from the kind's (wave predators grow tougher). */
+  maxHp?: number;
   x: number;
   y: number;
   z: number;
