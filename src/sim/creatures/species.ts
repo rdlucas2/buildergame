@@ -101,7 +101,7 @@ const PREDATOR_BASE = {
 export const KINDS: Record<CreatureKind, KindDef> = {
   rabbit: RABBIT,
   wolf: { ...PREDATOR_BASE, kind: 'wolf', name: 'Wolf', body: PREDATOR_BODY, speed: 2.8, maxHp: 30, bite: 6, blockDamage: 6, threat: 3, points: 30, box: [0.5, 1.3] },
-  fox: { ...PREDATOR_BASE, kind: 'fox', name: 'Fox', body: { height: 1, climb: 1, drop: 3 }, speed: 3.3, maxHp: 12, bite: 4, blockDamage: 3, threat: 1, points: 10, box: [0.4, 0.8] },
+  fox: { ...PREDATOR_BASE, kind: 'fox', name: 'Fox', body: { height: 1, climb: 1, drop: 3 }, speed: 3.3, maxHp: 10, bite: 4, blockDamage: 3, threat: 1, points: 10, box: [0.4, 0.8] },
   badger: { ...PREDATOR_BASE, kind: 'badger', name: 'Badger', body: { height: 2, climb: 1, drop: 2 }, speed: 2.0, maxHp: 50, bite: 6, blockDamage: 24, threat: 4, points: 40, box: [0.5, 0.8] },
   bear: { ...PREDATOR_BASE, kind: 'bear', name: 'Bear', body: PREDATOR_BODY, speed: 2.0, maxHp: 220, bite: 18, blockDamage: 40, threat: 14, points: 150, box: [0.6, 1.6] },
   tiger: { ...PREDATOR_BASE, kind: 'tiger', name: 'Tiger', body: { height: 2, climb: 3, drop: 4 }, speed: 3.6, maxHp: 90, bite: 14, blockDamage: 10, threat: 9, points: 90, box: [0.5, 1.3], abilities: { stealth: 0.5 } },

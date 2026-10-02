@@ -111,13 +111,11 @@ export class SafetyMap {
   }
 
   private rebuild(): void {
-    const index = this.nav.solids.index;
     const half = this.nav.terrain.half;
-    // One rectangle per placement, grown by the margin, then merged until none overlap.
+    // One rectangle per placement (and per other solid layer), grown by the margin, then merged
+    // until none overlap.
     let rects: Array<{ rect: Rect; ids: string[] }> = [];
-    for (const p of index.all()) {
-      const b = index.boundsOf(p.id);
-      if (!b) continue;
+    for (const { box: b, key } of this.nav.solids.extents()) {
       rects.push({
         rect: {
           x0: Math.max(-half, b.min.x - SAFETY_MARGIN),
@@ -125,7 +123,7 @@ export class SafetyMap {
           x1: Math.min(half, b.max.x + SAFETY_MARGIN),
           z1: Math.min(half, b.max.z + SAFETY_MARGIN),
         },
-        ids: [p.id],
+        ids: [key],
       });
     }
     for (let merged = true; merged; ) {

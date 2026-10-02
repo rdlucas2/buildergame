@@ -1,13 +1,17 @@
 import { z } from 'zod';
 import { vec3FromTuple, vec3ToTuple } from '../math';
 import { isRotation } from '../rotation';
-import { referencedStructureIds, structureFileName, type EcosystemState, type StructureRef, type World } from '../world';
+import type { DefenseState } from '../defense-state';
+import { CREATURE_KINDS, referencedStructureIds, structureFileName, type CreatureKind, type EcosystemState, type StructureRef, type World } from '../world';
 import { FileFormatError, formatZodError, parseJsonText } from './errors';
 import { decodeVoxelData, encodeVoxelData } from './rle';
 
 export const WORLD_FORMAT = 'buildergame.world';
-/** Newest version written. Version 1 files (no ecosystem) are still read, and plain worlds still write 1. */
-export const WORLD_FORMAT_VERSION = 2;
+/**
+ * Newest version written. Plain worlds still write 1, wild worlds 2 and Warren Defense worlds 3;
+ * every older version is still read.
+ */
+export const WORLD_FORMAT_VERSION = 3;
 /** Biomass is stored quantised to this many levels so that large even areas compress well. */
 export const BIOMASS_LEVELS = 16;
 const BIOMASS_STEP = 255 / (BIOMASS_LEVELS - 1);
@@ -25,6 +29,8 @@ const unit = z.number().min(0).max(1);
 /** More creatures than any population cap allows, so a file can't make the game do unbounded work. */
 export const MAX_CREATURES = 5000;
 
+const KindSchema = z.enum(CREATURE_KINDS as unknown as [CreatureKind, ...CreatureKind[]]);
+
 const CreatureSchema = z.object({
   id: int.min(1),
   species: z.enum(['prey', 'predator']),
@@ -38,11 +44,64 @@ const CreatureSchema = z.object({
   health: unit,
   age: z.number().min(0).max(1e12),
   cooldown: z.number().min(0).max(1e12),
+  kind: KindSchema.optional(),
+  role: z.enum(['breeder', 'defender']).optional(),
+  maxHp: z.number().min(0).max(1e9).optional(),
+});
+
+const rle = z.object({ encoding: z.literal('rle-u16-base64'), data: z.string() });
+const count = int.min(0).max(1e12);
+
+const DefenseSchema = z.object({
+  site: z.object({ x: coord, z: coord }),
+  base: z.object({
+    origin: z.object({ x: coord, z: coord }),
+    size: z.object({ x: int.min(1).max(256), y: int.min(1).max(256), z: int.min(1).max(256) }),
+    palette: z.array(z.string().min(1).max(64)).max(1024),
+    voxels: rle,
+    damage: rle,
+  }),
+  clock: z.number().min(0).max(1e9),
+  wave: int.min(0).max(1_000_000),
+  nextWaveAt: z.number().min(0).max(1e9),
+  orders: z
+    .array(
+      z.object({
+        at: z.number().min(0).max(1e9),
+        kind: KindSchema,
+        count: int.min(0).max(1000),
+        angle: z.number().min(-1000).max(1000),
+        hpScale: z.number().min(0).max(1e6),
+      }),
+    )
+    .max(5000),
+  points: z.number().min(0).max(1e12),
+  score: z.number().min(0).max(1e12),
+  budget: count,
+  budgetBuys: count,
+  allocation: int.min(0).max(100_000),
+  stats: z.object({
+    kills: count,
+    killsWith: z.record(z.string().max(64), count),
+    killsOf: z.record(z.string().max(64), count),
+    rabbitsLost: count,
+    blocksBroken: count,
+    shots: count,
+  }),
+  outcome: z.enum(['playing', 'lost']),
+  modifiers: z.object({
+    budget: z.number().min(0).max(1e9),
+    rabbits: int.min(0).max(10_000),
+    blockHp: z.number().min(0).max(1000),
+    damage: z.number().min(0).max(1000),
+    armour: z.number().min(0).max(1000),
+    fertility: z.number().min(0).max(1000),
+  }),
 });
 
 export const WorldFileSchema = z.object({
   format: z.literal(WORLD_FORMAT),
-  version: z.union([z.literal(1), z.literal(2)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   id: z.string().min(1).max(128),
   name: z.string().max(200),
   createdAt: z.string().max(64),
@@ -79,6 +138,7 @@ export const WorldFileSchema = z.object({
       history: z.array(z.tuple([z.number().min(0), int.min(0), int.min(0)])).max(5000).optional(),
       tally: z.record(z.string().max(32), int.min(0)).optional(),
       packTimer: z.number().min(0).max(1e9).optional(),
+      defense: DefenseSchema.optional(),
     })
     .optional(),
 });
@@ -89,7 +149,7 @@ export type WorldFile = z.infer<typeof WorldFileSchema>;
 export function encodeWorld(world: World, structureName: (id: string) => string | undefined): WorldFile {
   const file: WorldFile = {
     format: WORLD_FORMAT,
-    version: world.ecosystem ? 2 : 1,
+    version: world.ecosystem?.defense ? 3 : world.ecosystem ? 2 : 1,
     id: world.id,
     name: world.name,
     createdAt: world.createdAt,
@@ -116,6 +176,7 @@ function encodeEcosystem(e: EcosystemState): NonNullable<WorldFile['ecosystem']>
   if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
   if (e.tally) out.tally = { ...e.tally };
   if (e.packTimer !== undefined) out.packTimer = Math.max(0, e.packTimer);
+  if (e.defense) out.defense = encodeDefense(e.defense);
   if (e.biomass) {
     const q = new Uint16Array(e.biomass.length);
     for (let i = 0; i < q.length; i++) q[i] = Math.round(e.biomass[i] / BIOMASS_STEP);
@@ -139,6 +200,7 @@ function decodeEcosystem(e: NonNullable<WorldFile['ecosystem']>, groundSize: num
   if (e.history) out.history = e.history.map(([t, a, b]) => [t, a, b]);
   if (e.tally) out.tally = { ...e.tally };
   if (e.packTimer !== undefined) out.packTimer = e.packTimer;
+  if (e.defense) out.defense = decodeDefense(e.defense);
   if (e.biomass) {
     let q: Uint16Array;
     try {
@@ -154,6 +216,65 @@ function decodeEcosystem(e: NonNullable<WorldFile['ecosystem']>, groundSize: num
     out.biomass = b;
   }
   return out;
+}
+
+type DefenseFile = NonNullable<NonNullable<WorldFile['ecosystem']>['defense']>;
+
+function encodeDefense(d: DefenseState): DefenseFile {
+  return {
+    site: { ...d.site },
+    base: {
+      origin: { ...d.base.origin },
+      size: { ...d.base.size },
+      palette: [...d.base.palette],
+      voxels: { encoding: 'rle-u16-base64', data: encodeVoxelData(d.base.voxels) },
+      damage: { encoding: 'rle-u16-base64', data: encodeVoxelData(d.base.damage) },
+    },
+    clock: d.clock,
+    wave: d.wave,
+    nextWaveAt: d.nextWaveAt,
+    orders: d.orders.map((o) => ({ ...o })),
+    points: d.points,
+    score: d.score,
+    budget: d.budget,
+    budgetBuys: d.budgetBuys,
+    allocation: d.allocation,
+    stats: structuredClone(d.stats),
+    outcome: d.outcome,
+    modifiers: { ...d.modifiers },
+  };
+}
+
+function decodeDefense(f: DefenseFile): DefenseState {
+  const { size } = f.base;
+  const n = size.x * size.y * size.z;
+  let voxels: Uint16Array;
+  let damage: Uint16Array;
+  try {
+    voxels = decodeVoxelData(f.base.voxels.data, n);
+    damage = decodeVoxelData(f.base.damage.data, n);
+  } catch (err) {
+    throw new FileFormatError(`Invalid world file: the warren's blocks are corrupt (${(err as Error).message})`);
+  }
+  for (let i = 0; i < n; i++) {
+    if (voxels[i] > f.base.palette.length) throw new FileFormatError('Invalid world file: a warren block refers to a missing material');
+  }
+  return {
+    site: { ...f.site },
+    base: { origin: { ...f.base.origin }, size: { ...size }, palette: [...f.base.palette], voxels, damage },
+    clock: f.clock,
+    wave: f.wave,
+    nextWaveAt: f.nextWaveAt,
+    orders: f.orders.map((o) => ({ ...o })),
+    points: f.points,
+    score: f.score,
+    budget: f.budget,
+    budgetBuys: f.budgetBuys,
+    allocation: f.allocation,
+    stats: structuredClone(f.stats),
+    outcome: f.outcome,
+    modifiers: { ...f.modifiers },
+  };
 }
 
 export function serializeWorld(world: World, structureName: (id: string) => string | undefined): string {

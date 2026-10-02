@@ -36,6 +36,7 @@ export const MATERIALS: readonly MaterialDef[] = [
   { id: 'limestone', name: 'Limestone', color: '#d9d0b9', group: 'building' },
   { id: 'glass', name: 'Glass', color: '#a8d8f0', transparent: true, group: 'special' },
   { id: 'lantern', name: 'Lantern', color: '#ffd27a', emissive: true, group: 'special' },
+  { id: 'lookout', name: 'Lookout Post', color: '#c8963c', group: 'special' },
   { id: 'white', name: 'White', color: '#f2f2f2', group: 'color' },
   { id: 'black', name: 'Black', color: '#1e1e1e', group: 'color' },
   { id: 'red', name: 'Red', color: '#d23c3c', group: 'color' },

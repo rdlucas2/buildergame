@@ -15,9 +15,12 @@ const GRAZE_RATE = 45; // biomass per second
 const SATIETY_PER_BIOMASS = 0.45 / 255;
 const DRINK_RATE = 0.35; // hydration per second
 const FADE_SECONDS = 3;
-const PATH_BUDGET_PER_TICK = 6;
-/** Extra path searches per tick reserved for creatures running for their lives. */
-const URGENT_BUDGET_PER_TICK = 4;
+/** Path searches per tick, and extra ones reserved for creatures running for their lives. */
+export interface SearchBudget {
+  normal: number;
+  urgent: number;
+}
+const DEFAULT_BUDGET: SearchBudget = { normal: 6, urgent: 4 };
 export const PATH_NODES = 1500;
 const HISTORY_EVERY = 10;
 const HISTORY_MAX = 1000;
@@ -55,6 +58,8 @@ export class Population {
   behaviourFor: (c: Creature) => Behaviour = (c) => (c.species === 'prey' ? PREY : WOLF);
   /** Called when a creature dies (after its tally is counted). */
   onDeath?: (c: Creature, info: DeathInfo) => void;
+  /** Path searches allowed per tick (a game mode with many attackers raises it). */
+  searchBudget: SearchBudget = { ...DEFAULT_BUDGET };
   private readonly byId = new Map<number, Creature>();
   private pathBudget = 0;
   private urgentBudget = 0;
@@ -101,7 +106,7 @@ export class Population {
   }
 
   private make(s: CreatureState): Creature {
-    return { ...s, activity: 'idle', px: s.x, py: s.y, pz: s.z, path: [], step: 0, think: 0, deadFor: -1, cause: null, target: -1, wait: 0, stamina: 1 };
+    return { ...s, activity: 'idle', px: s.x, py: s.y, pz: s.z, path: [], step: 0, think: 0, deadFor: -1, cause: null, target: -1, wait: 0, stamina: 1, reload: 0 };
   }
 
   /** Spawns up to `count` adults on free ground within `radius` of (cx, cz). Returns how many. */
@@ -182,10 +187,15 @@ export class Population {
 
   // ---- simulation -------------------------------------------------------------------------
 
+  /** Refills this tick's path searches (`tick` does this; tests driving decisions directly call it). */
+  refillSearches(): void {
+    this.pathBudget = this.searchBudget.normal;
+    this.urgentBudget = this.searchBudget.urgent;
+  }
+
   tick(time: number): void {
     const dt = TICK_SECONDS;
-    this.pathBudget = PATH_BUDGET_PER_TICK;
-    this.urgentBudget = URGENT_BUDGET_PER_TICK;
+    this.refillSearches();
     if (this.revalidate) {
       this.revalidate = false;
       for (const c of this.creatures) if (c.deadFor < 0) this.unstick(c);

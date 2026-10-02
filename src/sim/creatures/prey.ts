@@ -12,8 +12,20 @@ const HIDE_SECONDS = 8;
 const WARY_DISTANCE = 7;
 /** Asleep, rabbits only hear what comes close. */
 const PREY_ASLEEP: Senses = { ...PREY_SENSES, sight: 0 };
+/** Nodes a rabbit may search on its way home (home can be a fair way off, through a narrow gap). */
+const HOME_NODES = 4000;
 /** Predator activities that mean "coming for you", wherever the predator is. */
 const HUNTING = new Set(['stalk', 'pounce', 'raid', 'breach', 'bite']);
+
+/** An area a rabbit treats as home (inclusive world cells): it runs back to it, and never out of it. */
+export interface HomeArea {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
+
+export const atHome = (h: HomeArea, x: number, z: number): boolean => x >= h.x0 && x <= h.x1 && z >= h.z0 && z <= h.z1;
 
 /**
  * A rabbit going about its life: graze, drink, sleep (somewhere safe if possible), raise young,
@@ -27,9 +39,11 @@ export const PREY: Behaviour = {
 
 /**
  * One decision for a rabbit. `breedBoost` scales its chance to breed (a game mode may favour
- * breeders), and `mayBreed` lets a mode keep some rabbits from breeding.
+ * breeders), `mayBreed` lets a mode keep some rabbits from breeding, and with a `home` the rabbit
+ * runs home from danger and stays inside it while threatened.
  */
-export function decidePrey(pop: Population, c: Creature, night: boolean, opts: { breedBoost?: number; mayBreed?: boolean } = {}): void {
+export function decidePrey(pop: Population, c: Creature, night: boolean, opts: { breedBoost?: number; mayBreed?: boolean; home?: HomeArea | null } = {}): void {
+  const home = opts.home ?? null;
   // Arrivals turn into the activity they were heading for.
   if (c.step >= c.path.length && c.path.length > 0) {
     const arrived = c.activity;
@@ -50,6 +64,10 @@ export function decidePrey(pop: Population, c: Creature, night: boolean, opts: {
   const threat = nearestThreat(pop, c);
   if (threat && !desperate) {
     c.target = threat.id;
+    if (home && !atHome(home, Math.floor(c.x), Math.floor(c.z))) return runHome(pop, c, threat, home);
+    // Safe cells keep out predators 2 blocks tall; a smaller one (a fox) can follow, so run from it.
+    const followable = defOf(threat).body.height < 2;
+    if (followable) return runFrom(pop, c, threat, home);
     if (pop.safeHere(c)) {
       if (c.activity !== 'rest') {
         c.activity = 'hide';
@@ -63,7 +81,7 @@ export function decidePrey(pop: Population, c: Creature, night: boolean, opts: {
       // Keep running while the destination is safe or still takes us away from the threat.
       if (pop.safety.isSafe(goal.x, goal.y, goal.z) || farther(goal, c, threat)) return;
     }
-    return flee(pop, c, threat);
+    return flee(pop, c, threat, home);
   }
   if (c.activity === 'hide' && c.wait > 0 && !thirsty && !starving) return;
 
@@ -90,7 +108,8 @@ export function decidePrey(pop: Population, c: Creature, night: boolean, opts: {
     const s = pop.shores.nearest(c.x, c.z, 12);
     if (s) return pop.goDrink(c);
   }
-  if (pop.rng.chance(0.3)) pop.wander(c, 8);
+  if (home && !atHome(home, Math.floor(c.x), Math.floor(c.z))) goHome(pop, c, home);
+  else if (pop.rng.chance(0.3)) pop.wander(c, 8);
   else {
     c.activity = 'idle';
     c.path = [];
@@ -125,21 +144,33 @@ function farther(goal: Cell, c: Creature, threat: Creature): boolean {
   return (goal.x + 0.5 - threat.x) ** 2 + (goal.z + 0.5 - threat.z) ** 2 > (c.x - threat.x) ** 2 + (c.z - threat.z) ** 2;
 }
 
-/** Runs for the nearest safe place, or failing that straight away from the threat. */
-export function flee(pop: Population, c: Creature, threat: Creature): void {
+/** Runs for the nearest safe place (at home, if it has one), or failing that away from the threat. */
+export function flee(pop: Population, c: Creature, threat: Creature, home: HomeArea | null = null): void {
   const cx = Math.floor(c.x);
   const cz = Math.floor(c.z);
   const safe = pop.safety.nearestSafe(cx, c.y, cz, FLEE_RADIUS);
-  if (safe && pop.route(c, safe, true)) {
+  if (safe && (!home || atHome(home, safe.x, safe.z)) && pop.route(c, safe, true)) {
     c.activity = 'flee';
     return;
   }
+  runFrom(pop, c, threat, home);
+}
+
+/** Runs straight away from the threat (turning aside when the way is blocked), staying at home if it has one. */
+function runFrom(pop: Population, c: Creature, threat: Creature, home: HomeArea | null = null): void {
+  if (c.activity === 'flee' && c.path.length > c.step && farther(c.path[c.path.length - 1], c, threat)) return;
   const body = defOf(c).body;
   const away = Math.atan2(c.x - threat.x, c.z - threat.z);
-  for (const turn of [0, 0.6, -0.6, 1.2, -1.2]) {
+  for (const turn of home ? [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9] : [0, 0.6, -0.6, 1.2, -1.2]) {
     const a = away + turn;
-    const x = Math.round(c.x + Math.sin(a) * 10);
-    const z = Math.round(c.z + Math.cos(a) * 10);
+    let x = Math.round(c.x + Math.sin(a) * 10);
+    let z = Math.round(c.z + Math.cos(a) * 10);
+    if (home) {
+      // Run to the far side of home rather than out of it.
+      x = Math.max(home.x0 + 1, Math.min(home.x1 - 1, x));
+      z = Math.max(home.z0 + 1, Math.min(home.z1 - 1, z));
+      if (!farther({ x, y: c.y, z }, c, threat)) continue;
+    }
     if (!pop.nav.inBounds(x, z)) continue;
     const y = pop.nav.surfaceBelow(x, c.y + 1, z, body);
     if (y !== null && pop.route(c, { x, y, z }, true)) {
@@ -150,4 +181,34 @@ export function flee(pop: Population, c: Creature, threat: Creature): void {
   c.activity = 'hide';
   c.path = [];
   c.wait = 2;
+}
+
+/** Runs back home from a threat, or keeps running if it already is. */
+function runHome(pop: Population, c: Creature, threat: Creature, home: HomeArea): void {
+  if (c.activity === 'flee' && c.path.length > c.step) {
+    const goal = c.path[c.path.length - 1];
+    if (atHome(home, goal.x, goal.z)) return;
+  }
+  if (routeHome(pop, c, home, true)) return void (c.activity = 'flee');
+  runFrom(pop, c, threat);
+}
+
+/** Walks back home when there is nothing better to do. */
+function goHome(pop: Population, c: Creature, home: HomeArea): void {
+  if (routeHome(pop, c, home, false)) c.activity = 'wander';
+  else pop.wander(c, 8);
+}
+
+/** Plans a way to somewhere inside home, trying the middle first, then a few cells around it. */
+function routeHome(pop: Population, c: Creature, home: HomeArea, urgent: boolean): boolean {
+  const body = defOf(c).body;
+  const mx = Math.floor((home.x0 + home.x1) / 2);
+  const mz = Math.floor((home.z0 + home.z1) / 2);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const x = attempt === 0 ? mx : Math.round(pop.rng.range(home.x0 + 1, home.x1 - 1));
+    const z = attempt === 0 ? mz : Math.round(pop.rng.range(home.z0 + 1, home.z1 - 1));
+    const y = pop.nav.surfaceBelow(x, 1, z, body);
+    if (y !== null && pop.route(c, { x, y, z }, urgent, HOME_NODES)) return true;
+  }
+  return false;
 }

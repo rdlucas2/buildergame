@@ -7,7 +7,9 @@ import { getMaterial } from '../core/materials';
 import type { Vec3 } from '../core/math';
 import type { Rotation } from '../core/rotation';
 import { EmptyStructureError, structureBlockCount, type Structure } from '../core/structure';
-import { createWorld, referencedStructureIds, touchWorld, type CreatureSpecies, type Placement, type World } from '../core/world';
+import { createWorld, placementVoxelAt, referencedStructureIds, touchWorld, type CreatureSpecies, type Placement, type World } from '../core/world';
+import { aabbFromPosSize } from '../core/math';
+import { rotatedSize } from '../core/rotation';
 import { buildExampleStructures, exampleDescription } from '../examples';
 import { buildStructureGeometry, StructureGeometryCache } from '../render/structure-geometry';
 import { SceneHost } from '../render/scene';
@@ -17,6 +19,7 @@ import { downloadBlob, downloadBytes, downloadText, pickFiles, readFileBytes, re
 import { StructureLibrary } from '../storage/library';
 import { WorldStore } from '../storage/worlds';
 import { confirmDialog, newWorldDialog, promptDialog } from '../ui/dialogs';
+import { openRoundSummary } from '../ui/defense-hud';
 import { openHelp } from '../ui/help';
 import { Hud } from '../ui/hud';
 import { openLibraryPanel, type LibraryTab } from '../ui/library-panel';
@@ -26,12 +29,21 @@ import { toast } from '../ui/toast';
 import { openWorldPanel } from '../ui/world-panel';
 import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
 import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
-import { EcosystemController, type CreatureInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
+import { EcosystemController, type CreatureInfo, type DefenseInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
 import { START_TIME, type Speed } from '../sim/clock';
+import type { ActionResult, DefenseAction } from '../sim/defense/defense';
+import { blockCost, blockHp } from '../sim/defense/materials';
+import { Ecosystem } from '../sim/ecosystem';
 import { randomSeed } from '../sim/rng';
 import type { Overlay } from '../render/terrain-view';
 import { DEFAULT_HOTBAR, StructureMode } from './structure-mode';
 import { WorldMode } from './world-mode';
+
+/** Fortify mode's starting hotbar: wall materials from cheap to tough, and lookout posts. */
+export const FORTIFY_HOTBAR = ['cobblestone', 'planks', 'stone_bricks', 'iron', 'lookout', 'log', 'brick', 'dirt', 'glass'];
+
+/** Ground size of Warren Defense worlds: plenty of room around the warren, and quick to simulate. */
+export const DEFENSE_GROUND = 512;
 
 const HOLD_DELAY = 0.25;
 const HOLD_REPEAT = 0.1;
@@ -93,6 +105,7 @@ export class Game {
     this.controls = new FlyControls(this.host.camera, this.host.canvas);
     this.materials = createVoxelMaterials();
     this.hotbar = [...worlds.getSetting<string[]>('hotbar', DEFAULT_HOTBAR)];
+    this.fortifyHotbar = [...worlds.getSetting<string[]>('fortifyHotbar', FORTIFY_HOTBAR)];
     this.hud = new Hud({
       onLibrary: () => this.openLibrary(),
       onWorld: () => this.openWorldMenu(),
@@ -112,8 +125,10 @@ export class Game {
     this.worldMode = new WorldMode(world, library, this.cache, this.materials);
     this.worldMode.onChange = () => this.scheduleSave();
     this.host.scene.add(this.worldMode.group);
-    this.eco = new EcosystemController(this.host, this.worldMode, library, container);
+    this.eco = new EcosystemController(this.host, this.worldMode, library, container, this.materials);
     this.eco.onActivity = () => this.scheduleSave();
+    this.eco.onToggleFortify = () => this.toggleFortify();
+    this.eco.onRoundOver = () => this.showRoundSummary();
     this.eco.attach(world);
     this.applyWorldPose(world);
 
@@ -146,7 +161,10 @@ export class Game {
   private frame(dt: number): void {
     if (!isPanelOpen()) this.controls.update(dt);
     if (this.structureMode) this.structureMode.update(this.host.camera);
-    else this.worldMode.update(this.host.camera);
+    else {
+      this.worldMode.update(this.host.camera);
+      this.eco.fortify.update(this.host.camera, this.eco.defense, this.fortifyMaterial);
+    }
     this.updateHold(dt);
     this.eco.frame(dt, !!this.structureMode);
     if (this.eco.active) {
@@ -235,6 +253,14 @@ export class Game {
 
   /** Hotbar click or tap: select a slot, or open every material when the slot is already selected. */
   private selectHotbarSlot(i: number): void {
+    if (this.eco.fortify.active) {
+      if (i === this.fortifySlot) this.handleKey('KeyE');
+      else {
+        this.fortifySlot = i;
+        this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+      }
+      return;
+    }
     const sm = this.structureMode;
     if (!sm) return;
     if (i === sm.selected) {
@@ -253,6 +279,7 @@ export class Game {
   private touchContext(): TouchContext {
     const sm = this.structureMode;
     if (sm) return { mode: 'structure', canUndo: sm.undo.canUndo, canRedo: sm.undo.canRedo };
+    if (this.eco.fortify.active) return { mode: 'structure', canUndo: false, canRedo: false };
     const wm = this.worldMode;
     if (wm.placing) return { mode: 'placing' };
     return { mode: 'world', hovering: !!wm.hoveredId, canUndo: wm.undo.canUndo, canRedo: wm.undo.canRedo };
@@ -315,13 +342,13 @@ export class Game {
 
   private currentCellKey(): string | null {
     const sm = this.structureMode;
-    if (!sm) return null;
-    const c = this.holdButton === 0 ? sm.hover.voxel : sm.hover.place;
+    const f = this.eco.fortify;
+    const c = sm ? (this.holdButton === 0 ? sm.hover.voxel : sm.hover.place) : f.active ? (this.holdButton === 0 ? f.voxel : f.place) : null;
     return c ? `${c.x},${c.y},${c.z}` : null;
   }
 
   private updateHold(dt: number): void {
-    if (this.holdButton === null || !this.structureMode || !this.interactive) return;
+    if (this.holdButton === null || !(this.structureMode || this.eco.fortify.active) || !this.interactive) return;
     this.holdTimer += dt;
     if (this.holdTimer < HOLD_DELAY) return;
     const key = this.currentCellKey();
@@ -345,7 +372,26 @@ export class Game {
       }
       return false;
     }
+    const defense = this.eco.defense;
+    if (defense && this.eco.fortify.active) {
+      if (button === 1) {
+        const m = this.eco.fortify.pick(defense);
+        if (m) {
+          const i = this.fortifyHotbar.indexOf(m);
+          if (i >= 0) this.fortifySlot = i;
+          else this.fortifyHotbar[this.fortifySlot] = m;
+          this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+        }
+        return m !== null;
+      }
+      const r = button === 0 ? this.eco.fortify.breakBlock(defense) : button === 2 ? this.eco.fortify.build(defense, this.fortifyMaterial) : null;
+      if (!r) return false;
+      if (r.ok) this.scheduleSave();
+      else if (this.holdButton === null) toast(r.reason ?? 'Not possible here.', 'error', 1500);
+      return r.ok;
+    }
     const wm = this.worldMode;
+    if (button === 0 && wm.placing && defense) return this.stampPlacing();
     if (button === 0) {
       if (!wm.placing) return false;
       const placed = wm.confirmPlacement();
@@ -381,6 +427,32 @@ export class Game {
     if (code === 'KeyP') {
       this.screenshot();
       return true;
+    }
+    if (!sm && code === 'KeyF' && this.eco.defense) {
+      this.toggleFortify();
+      return true;
+    }
+    if (!sm && this.eco.fortify.active) {
+      if (/^Digit[1-9]$/.test(code)) {
+        this.fortifySlot = Number(code.slice(5)) - 1;
+        this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+        return true;
+      }
+      switch (code) {
+        case 'KeyE':
+          openMaterialPicker(this.fortifyMaterial, (id) => {
+            this.fortifyHotbar[this.fortifySlot] = id;
+            void this.worlds.setSetting('fortifyHotbar', this.fortifyHotbar);
+            this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+          });
+          return true;
+        case 'KeyQ':
+          return this.act(1);
+        case 'Escape':
+        case 'Enter':
+          this.toggleFortify(false);
+          return true;
+      }
     }
     if (sm) {
       if (/^Digit[1-9]$/.test(code)) {
@@ -602,8 +674,10 @@ export class Game {
           onEditCopy: (s) => void this.enterStructureMode(s, { asCopy: true }),
           onPlace: (s) => {
             closePanel();
+            this.toggleFortify(false);
             this.worldMode.startPlacing(s);
-            toast(`Placing "${s.name}": ${this.say('click to place, R rotates, Esc cancels.', 'aim, then tap Place. Rotate turns it.')}`, 'info', 3000);
+            const how = this.say('click to place, R rotates, Esc cancels.', 'aim, then tap Place. Rotate turns it.');
+            toast(this.eco.defense ? `Building "${s.name}" into the warren: ${how} Its blocks count against the budget.` : `Placing "${s.name}": ${how}`, 'info', 3000);
           },
           onEdit: (s) => void this.enterStructureMode(s),
           onDuplicate: async (s) => {
@@ -666,7 +740,7 @@ export class Game {
           onNew: async () => {
             const r = await newWorldDialog(`World ${this.worlds.list().length + 1}`);
             if (r === null) return render();
-            await this.createWorld(r.name.trim() || 'Untitled world', { wild: r.wild });
+            await this.createWorld(r.name.trim() || 'Untitled world', { wild: r.kind === 'wild', defense: r.kind === 'defense' });
             closePanel();
           },
           onRename: async () => {
@@ -712,12 +786,82 @@ export class Game {
 
   // ---- worlds ----------------------------------------------------------------------------
 
-  /** Creates and opens a new world. Wild worlds get terrain, grass and day/night from a fresh seed. */
-  async createWorld(name: string, opts: { wild?: boolean; seed?: number } = {}): Promise<World> {
-    const w = createWorld({ name, ...(opts.wild ? { ecosystem: { seed: opts.seed ?? randomSeed(), time: START_TIME } } : {}) });
+  /**
+   * Creates and opens a new world. Wild worlds get terrain, grass and day/night from a fresh seed;
+   * Warren Defense worlds also get a walled warren and the first round of waves.
+   */
+  async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number } = {}): Promise<World> {
+    const seed = opts.seed ?? randomSeed();
+    const w = opts.defense ? newDefenseWorld(name, seed) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
     await this.worlds.save(w);
     await this.switchWorld(w.id);
     return w;
+  }
+
+  /** Starts a fresh round in the current Warren Defense world (a new seed, the starter warren). */
+  async restartRound(seed = randomSeed()): Promise<void> {
+    const current = this.currentWorld();
+    if (!current.ecosystem?.defense) return;
+    this.toggleFortify(false);
+    const fresh = newDefenseWorld(current.name, seed);
+    const w: World = { ...current, ecosystem: fresh.ecosystem, spawn: fresh.spawn, placements: [] };
+    this.worldMode.load(w);
+    this.eco.reattach(w);
+    this.controls.setPose({ position: [...w.spawn.position], yaw: w.spawn.yaw, pitch: w.spawn.pitch });
+    await this.flushSave();
+    this.refreshHudChrome();
+  }
+
+  private showRoundSummary(): void {
+    const d = this.eco.defense;
+    if (!d) return;
+    this.toggleFortify(false);
+    void this.flushSave();
+    openRoundSummary({ clock: d.clock, waves: d.wave, score: d.score, stats: d.stats }, { onRestart: () => void this.restartRound() });
+  }
+
+  // ---- Warren Defense: fortify ----------------------------------------------------------
+
+  private fortifySlot = 0;
+  /** Fortify mode keeps its own hotbar of building materials, separate from structure mode's. */
+  private fortifyHotbar: string[] = [];
+
+  private get fortifyMaterial(): string {
+    return this.fortifyHotbar[this.fortifySlot] ?? 'cobblestone';
+  }
+
+  /** Turns Fortify mode (building the warren) on or off; with no argument, toggles it. */
+  toggleFortify(on = !this.eco.fortify.active): void {
+    const defense = this.eco.defense;
+    if (on && (!defense || this.structureMode || defense.over)) return;
+    if (on && this.worldMode.placing) this.worldMode.cancelPlacing();
+    this.eco.fortify.setActive(on, defense);
+    this.refreshHudChrome();
+  }
+
+  /** Stamps the structure being placed into the warren as blocks (Warren Defense has no placements). */
+  private stampPlacing(): boolean {
+    const wm = this.worldMode;
+    const p = wm.placing;
+    if (!p || !p.target) return false;
+    const s = p.structure;
+    const size = rotatedSize(s.voxels.size, p.rotation);
+    const placement = { id: 'stamp', structureId: s.id, position: p.target, rotation: p.rotation };
+    const bounds = aabbFromPosSize(p.target, size);
+    const blocks: Array<{ x: number; y: number; z: number; material: string }> = [];
+    for (let y = bounds.min.y; y < bounds.max.y; y++)
+      for (let z = bounds.min.z; z < bounds.max.z; z++)
+        for (let x = bounds.min.x; x < bounds.max.x; x++) {
+          const v = placementVoxelAt(s, placement, x, y, z);
+          if (v !== 0) blocks.push({ x, y, z, material: s.palette[v - 1].material });
+        }
+    const r = this.eco.applyDefense({ type: 'placeMany', blocks });
+    if (r.ok) {
+      toast(`Built "${s.name}" into the warren (${blocks.length} blocks).`, 'success', 1800);
+      wm.cancelPlacing();
+      this.scheduleSave();
+    } else toast(r.reason ?? 'It does not fit.', 'error', 2200);
+    return r.ok;
   }
 
   async switchWorld(id: string): Promise<boolean> {
@@ -801,8 +945,14 @@ export class Game {
 
   private refreshHudChrome(): void {
     const sm = this.structureMode;
-    this.hud.setHotbarVisible(!!sm);
-    if (sm) {
+    const fortifying = !sm && this.eco.fortify.active;
+    this.hud.setHotbarVisible(!!sm || fortifying);
+    if (fortifying) {
+      this.hud.setMode(`Warren Defense: ${this.worldMode.world.name} — Fortify`);
+      this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+      this.hud.setStructureButton('Build structure', 'B');
+      this.hud.setHint('Right click: build · Left click: remove · 1–9: material · E: all materials · F or Esc: done');
+    } else if (sm) {
       this.hud.setMode(
         !sm.editing ? 'Structure mode' : sm.asCopy ? `Structure mode — copy of "${sm.editing.name}"` : `Structure mode — editing "${sm.editing.name}"`,
       );
@@ -810,7 +960,7 @@ export class Game {
       this.hud.setStructureButton('Save structure', 'Enter');
       this.hud.setHint('Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave');
     } else {
-      this.hud.setMode(`${this.eco.active ? 'Wild world' : 'World'}: ${this.worldMode.world.name}`);
+      this.hud.setMode(`${this.eco.defense ? 'Warren Defense' : this.eco.active ? 'Wild world' : 'World'}: ${this.worldMode.world.name}`);
       this.hud.setStructureButton('Build structure', 'B');
       this.hud.setHint('Tab: library · B: build a structure · M: worlds · H: help');
     }
@@ -834,7 +984,20 @@ export class Game {
       return;
     }
     const wm = this.worldMode;
-    const lines = [`${wm.world.placements.length} structure${wm.world.placements.length === 1 ? '' : 's'} placed`, pos];
+    const defense = this.eco.defense;
+    if (defense && this.eco.fortify.active) {
+      const f = this.eco.fortify;
+      const at = f.voxel ? defense.base.materialAt(f.voxel.x, f.voxel.y, f.voxel.z) : null;
+      const hp = f.voxel && at ? ` · ${Math.ceil(defense.base.hpAt(f.voxel.x, f.voxel.y, f.voxel.z))}/${defense.base.maxHpAt(f.voxel.x, f.voxel.y, f.voxel.z)} hp` : '';
+      this.hud.setStatus([
+        `Budget ${defense.base.cost()}/${defense.budget} · ${defense.base.blocks()} blocks`,
+        `Building with ${getMaterial(this.fortifyMaterial)?.name ?? this.fortifyMaterial} (cost ${blockCost(this.fortifyMaterial)}, ${blockHp(this.fortifyMaterial, defense.base.strength, defense.base.hpMultiplier)} hp)`,
+        at ? `Aiming at ${getMaterial(at)?.name ?? at}${hp}` : f.place ? 'Aiming at an empty spot' : 'Aim inside the orange outline',
+        pos,
+      ]);
+      return;
+    }
+    const lines = [defense ? `Warren: ${defense.base.blocks()} blocks · budget ${defense.base.cost()}/${defense.budget}` : `${wm.world.placements.length} structure${wm.world.placements.length === 1 ? '' : 's'} placed`, pos];
     if (wm.placing) {
       const s = wm.placing.structure;
       const size = s.voxels.size;
@@ -918,7 +1081,8 @@ export class Game {
       hoveredPlacement: () => g.worldMode.hoveredPlacement()?.placement ?? null,
       world: () => JSON.parse(JSON.stringify(g.worldMode.world)) as World,
       listWorlds: () => g.worlds.list(),
-      createWorld: (name, wild, seed) => g.createWorld(name, { wild: !!wild, ...(seed !== undefined ? { seed } : {}) }).then((w) => w.id),
+      createWorld: (name, wild, seed) =>
+        g.createWorld(name, { wild: wild === true || wild === 'wild', defense: wild === 'defense', ...(seed !== undefined ? { seed } : {}) }).then((w) => w.id),
       eco: () => g.eco.info(),
       ecoCell: (x, z) => g.eco.cell(x, z),
       ecoAdvance: (seconds) => g.eco.advance(seconds),
@@ -930,6 +1094,11 @@ export class Game {
       ecoReleaseAtCrosshair: (count, species = 'prey') => g.eco.releaseAtCrosshair(species, count),
       ecoSafe: (x, y, z) => g.eco.ecosystem?.safety.isSafe(x, y, z) ?? false,
       ecoHovered: () => g.eco.hovered()?.id ?? null,
+      defense: () => g.eco.defenseInfo(),
+      defenseApply: (action) => g.eco.applyDefense(action),
+      fortify: (on) => g.toggleFortify(on),
+      fortifyAim: () => (g.eco.fortify.active ? { voxel: g.eco.fortify.voxel, place: g.eco.fortify.place } : null),
+      restartRound: (seed) => g.restartRound(seed),
       switchWorld: (id) => g.switchWorld(id),
       flushSave: () => g.flushSave(),
       exportWorldBundleBase64: () => bytesToBase64(g.encodeWorldBundle()),
@@ -1004,8 +1173,11 @@ export interface GameDebug {
   hoveredPlacement(): Placement | null;
   world(): World;
   listWorlds(): Array<{ id: string; name: string; updatedAt: string; placements: number }>;
-  /** Creates and opens a world; `wild` adds terrain, grass and day/night (optionally from a fixed seed). */
-  createWorld(name: string, wild?: boolean, seed?: number): Promise<string>;
+  /**
+   * Creates and opens a world. `true` or `'wild'` adds terrain, grass, day/night and creatures;
+   * `'defense'` makes a Warren Defense world. A seed makes it reproducible.
+   */
+  createWorld(name: string, wild?: boolean | 'wild' | 'defense', seed?: number): Promise<string>;
   eco(): EcosystemInfo | null;
   ecoCell(x: number, z: number): EcosystemCell | null;
   /** Runs the ecosystem forward immediately by this many simulation seconds. */
@@ -1021,6 +1193,15 @@ export interface GameDebug {
   ecoSafe(x: number, y: number, z: number): boolean;
   /** Id of the creature under the crosshair, if any. */
   ecoHovered(): number | null;
+  /** The Warren Defense round, or null in other worlds. */
+  defense(): DefenseInfo | null;
+  /** Applies a Warren Defense action as the player would (allocate, call a wave, build...). */
+  defenseApply(action: DefenseAction): ActionResult;
+  fortify(on: boolean): void;
+  /** Where Fortify mode is aiming: the block under the crosshair and where a new one would go. */
+  fortifyAim(): { voxel: Vec3 | null; place: Vec3 | null } | null;
+  /** Starts a new round in the current Warren Defense world. */
+  restartRound(seed?: number): Promise<void>;
   switchWorld(id: string): Promise<boolean>;
   flushSave(): Promise<void>;
   exportWorldBundleBase64(): string;
@@ -1040,4 +1221,19 @@ declare global {
   interface Window {
     __game?: GameDebug;
   }
+}
+
+/**
+ * A new Warren Defense world: wild terrain, the starter warren beside the water with the herd
+ * inside, and a spawn point looking down on it.
+ */
+export function newDefenseWorld(name: string, seed: number): World {
+  const eco = Ecosystem.create(DEFENSE_GROUND, seed, { defense: {} });
+  const site = eco.defense!.site;
+  return createWorld({
+    name,
+    ground: { material: 'grass', size: DEFENSE_GROUND },
+    spawn: { position: [site.x, 24, site.z + 30], yaw: 0, pitch: -0.62 },
+    ecosystem: eco.snapshot(),
+  });
 }

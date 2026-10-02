@@ -69,19 +69,35 @@ export function confirmDialog(title: string, message: string, okLabel = 'OK', da
   });
 }
 
-/** "New world" dialog: a name and whether the world is wild (terrain, water, grass and creatures). */
-export function newWorldDialog(defaultName: string): Promise<{ name: string; wild: boolean } | null> {
+/** What kind of world to make: a plain building world, a wild sandbox, or a Warren Defense game. */
+export type WorldKind = 'plain' | 'wild' | 'defense';
+
+/** "New world" dialog: a name and the kind of world (chosen once, when the world is created). */
+export function newWorldDialog(defaultName: string): Promise<{ name: string; kind: WorldKind } | null> {
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (v: { name: string; wild: boolean } | null) => {
+    const finish = (v: { name: string; kind: WorldKind } | null) => {
       if (settled) return;
       settled = true;
       panel.close();
       resolve(v);
     };
     const input = el('input', { type: 'text', value: defaultName, class: 'text-input', id: 'new-world-name' });
-    const wild = el('input', { type: 'checkbox', id: 'new-world-wild' });
-    const submit = () => finish({ name: input.value, wild: wild.checked });
+    const option = (kind: WorldKind, id: string, title: string, text: string) => {
+      const radio = el('input', { type: 'radio', name: 'new-world-kind', value: kind, id, checked: kind === 'plain' });
+      return { radio, label: el('label', { class: 'check-field' }, radio, el('span', {}, el('strong', {}, title), el('span', { class: 'muted small' }, text))) };
+    };
+    const kinds = [
+      option('plain', 'new-world-plain', 'Builder', 'A flat world for building. No creatures, no day and night.'),
+      option('wild', 'new-world-wild', 'Wild world', 'Ponds, streams and grass that grows only under open sky, day and night, rabbits, and wolves that hunt them.'),
+      option(
+        'defense',
+        'new-world-defense',
+        'Warren Defense',
+        "Waves of predators attack your rabbits' warren. Fortify it on a block budget and split the rabbits into defenders and breeders. How long can they hold out?",
+      ),
+    ];
+    const submit = () => finish({ name: input.value, kind: (kinds.find((k) => k.radio.checked)?.radio.value as WorldKind | undefined) ?? 'plain' });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
       e.stopPropagation();
@@ -89,12 +105,8 @@ export function newWorldDialog(defaultName: string): Promise<{ name: string; wil
     const panel = openPanel('New world', { id: 'new-world-dialog' });
     panel.body.append(
       el('label', { class: 'field' }, 'World name', input),
-      el(
-        'label',
-        { class: 'check-field' },
-        wild,
-        el('span', {}, el('strong', {}, 'Wild world'), el('span', { class: 'muted small' }, 'Ponds, streams and grass that grows only under open sky, with day and night. Creatures arrive in a later update. This is chosen once, when the world is created.')),
-      ),
+      el('div', { class: 'kind-list', role: 'radiogroup', 'aria-label': 'Kind of world' }, ...kinds.map((k) => k.label)),
+      el('p', { class: 'muted small' }, 'The kind is chosen once, when the world is created.'),
       el(
         'div',
         { class: 'row end' },

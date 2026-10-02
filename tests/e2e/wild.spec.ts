@@ -16,7 +16,7 @@ async function boot(page: Page): Promise<void> {
 
 const eco = (page: Page) => page.evaluate(() => window.__game!.eco());
 
-test('the new-world dialog offers a Wild world toggle that is off by default', async ({ page }) => {
+test('the new-world dialog offers a Wild option that is off by default', async ({ page }) => {
   await boot(page);
   await page.keyboard.press('KeyM');
   await page.locator('#world-new').click();

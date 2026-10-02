@@ -53,6 +53,8 @@ export interface Creature extends CreatureState {
   wait: number;
   /** Sprinting reserve, 0–1: a pounce spends it, rest restores it. */
   stamina: number;
+  /** Seconds until a defender can fire again. */
+  reload: number;
 }
 
 export interface Tally {

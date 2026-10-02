@@ -43,6 +43,8 @@ export class Vegetation {
   readonly biomass: Uint8Array;
   /** Number of placements with a block somewhere above each ground cell. */
   readonly cover: Uint16Array;
+  /** Cover from blocks that are not placements (a defense base), kept across placement resets. */
+  private readonly external: Uint8Array;
   private readonly stamps = new Map<string, Int32Array>();
   private cursor = 0;
 
@@ -54,6 +56,7 @@ export class Vegetation {
     if (biomass && biomass.length !== n) throw new Error(`biomass has ${biomass.length} cells, expected ${n}`);
     this.biomass = biomass ?? new Uint8Array(n);
     this.cover = new Uint16Array(n);
+    this.external = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (terrain.water[i]) this.biomass[i] = 0;
   }
 
@@ -103,8 +106,18 @@ export class Vegetation {
   }
 
   clearPlacements(): void {
-    this.cover.fill(0);
+    for (let i = 0; i < this.cover.length; i++) this.cover[i] = this.external[i];
     this.stamps.clear();
+  }
+
+  /** Marks a ground cell as covered (or not) by blocks that are not placements, such as a defense base. */
+  setExternalCover(x: number, z: number, covered: boolean): void {
+    if (!inGround(this.terrain.size, x, z)) return;
+    const i = cellIndex(this.terrain.size, x, z);
+    const v = covered ? 1 : 0;
+    if (this.external[i] === v) return;
+    this.external[i] = v;
+    this.cover[i] += covered ? 1 : -1;
   }
 
   get placementCount(): number {

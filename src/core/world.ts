@@ -1,3 +1,4 @@
+import type { DefenseState } from './defense-state';
 import { newId, nowIso } from './ids';
 import { aabbFromPosSize, type AABB, type Vec3, type Vec3Tuple } from './math';
 import { rotatedSize, unrotateLocal, type Rotation } from './rotation';
@@ -43,6 +44,8 @@ export interface EcosystemState {
   tally?: Record<string, number>;
   /** Seconds until a wolf pack arrives (counts down only while there are no wolves). */
   packTimer?: number;
+  /** Present only in Warren Defense worlds. */
+  defense?: DefenseState;
 }
 
 export type CreatureSpecies = 'prey' | 'predator';

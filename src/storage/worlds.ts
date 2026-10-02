@@ -7,6 +7,8 @@ export interface WorldSummary {
   updatedAt: string;
   placements: number;
   wild: boolean;
+  /** A Warren Defense world (always wild too). */
+  defense: boolean;
 }
 
 interface Meta {
@@ -39,7 +41,7 @@ export class WorldStore {
 
   list(): WorldSummary[] {
     return [...this.worlds.values()]
-      .map((w) => ({ id: w.id, name: w.name, updatedAt: w.updatedAt, placements: w.placements.length, wild: !!w.ecosystem }))
+      .map((w) => ({ id: w.id, name: w.name, updatedAt: w.updatedAt, placements: w.placements.length, wild: !!w.ecosystem, defense: !!w.ecosystem?.defense }))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
 

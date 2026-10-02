@@ -11,7 +11,7 @@ to every material, and share what you make as files that anyone can drop into th
 - **Examples** — the library's Examples tab has ready-made structures to place: a cottage, a
   farmhouse, a modern house, the Eiffel Tower, the Arc de Triomphe and a rabbit warren for wild
   worlds. Editing one saves your own copy; the built-in original never changes. They are defined in code under `src/examples/`.
-- **Wild worlds**: tick "Wild world" when creating a world to get generated ponds and streams,
+- **Wild worlds**: choose "Wild" when creating a world to get generated ponds and streams,
   grass, and a day/night cycle with pause, 1×, 4× and 16× speed. Grass grows only where sunlight
   reaches the ground, so roofs starve the ground beneath them while open courtyards stay green. The
   Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky,
@@ -33,6 +33,24 @@ to every material, and share what you make as files that anyone can drop into th
   - The **Safety** overlay colours every spot where rabbits are safe (teal). The *Rabbit Warren*
     example is a ready-made safe pen: it is open to the sky so grass still grows inside.
   - The Nature panel graphs both populations and can release wolves too.
+- **Warren Defense**: choose "Warren Defense" when creating a world for a tower defense round on top
+  of the wild-world simulation. Rabbits hold a walled warren against waves of predators that get
+  tougher the longer the warren stands.
+  - Waves come on a clock: the first at 0:30, then about one a minute, whether or not the last one
+    is beaten. **Call now** brings the next wave early for bonus points.
+  - Foxes are fast and weak, and the only predators that fit through 1-high gaps. Wolves and badgers
+    find the weakest stretch of wall (counting damage already done) and chew through it; badgers
+    dig fastest. The waves for a seed are always the same.
+  - Rabbits are **defenders** (red scarves), which man the lookout posts and shoot slingshots at
+    predators they can see, or **breeders**, which keep eating, drinking and raising young, and run
+    back inside the warren when predators come. The − and + buttons set how many defend. Extra
+    defenders need extra Lookout Posts to shoot from.
+  - **Fortify** (F) builds and breaks warren blocks inside the orange area, against a block budget.
+    Stronger materials hold out longer and cost more: soft blocks, wood, stone, masonry and metal.
+    A **Lookout Post** block makes a defender post on top of it. Library structures can be stamped
+    into the warren too.
+  - Kills and waves earn points, which buy more block budget. The round ends when the last rabbit
+    falls, and the summary shows how long the warren held out.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 
@@ -56,6 +74,7 @@ The game is a static site with no server, hosted on GitHub Pages at
 | W A S D · Space / Shift · Ctrl · wheel | Fly · rise / sink · boost · change speed |
 | Tab | Structure library: place, edit, duplicate, rename, export, import, delete |
 | B | Build a new structure (enter structure mode) |
+| F | Fortify the warren (Warren Defense worlds) |
 | M | World menu: switch, create, rename, export, import worlds; author name; spawn point |
 | H | Controls overlay |
 | P | Save a screenshot |
@@ -93,6 +112,7 @@ npm run typecheck
 npm test           # unit tests (vitest)
 npm run e2e        # browser tests (playwright, headless chromium)
 npm run build      # production build in dist/
+npm run balance    # headless Warren Defense rounds over many seeds, per scripted policy
 ```
 
 The game exposes `window.__game` for automation (the end-to-end tests drive it through this API).

@@ -42,6 +42,20 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
     ],
   ],
   [
+    'Warren Defense',
+    [
+      ['Goal', 'Keep the rabbits alive: the round ends when the last one falls. Waves get tougher the longer you hold out'],
+      ['Waves', 'The first comes at 0:30, then about one a minute; Call now brings the next one early for bonus points'],
+      ['Predators', 'Foxes are small enough for 1-high gaps; wolves and badgers chew through the weakest wall instead'],
+      ['Defenders', 'Red scarves: they man the lookout posts and shoot at predators they can see'],
+      ['Breeders', 'Everyone else eats, drinks and raises young, and runs home when predators come; use − / + to set how many defend'],
+      ['F', 'Fortify: build (right click) and break (left click) warren blocks inside the orange area'],
+      ['Block budget', 'Stronger materials cost more; points from kills buy +100 more budget'],
+      ['Lookout Post', 'A defender post: the block on top is where a defender stands. More defenders need more posts'],
+      ['Tab', 'Place a library structure to stamp it into the warren (it costs budget)'],
+    ],
+  ],
+  [
     'Touch screens',
     [
       ['Left stick', 'Move; push it all the way to go faster'],
