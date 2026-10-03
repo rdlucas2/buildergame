@@ -42,9 +42,15 @@ export interface DefenseModifiers {
   armour: number;
   /** Multiplier on breeders' chance to breed. */
   fertility: number;
+  /** Weapons unlocked from the start, beyond the slingshot (1 adds the bow, 2 the crossbow too...). */
+  startWeapon: number;
+  /** Perk offers that can be redealt in a round. */
+  rerolls: number;
+  /** Cards in each perk offer. */
+  cards: number;
 }
 
-export const NO_MODIFIERS: DefenseModifiers = { budget: 0, rabbits: 0, blockHp: 1, damage: 1, armour: 1, fertility: 1 };
+export const NO_MODIFIERS: DefenseModifiers = { budget: 0, rabbits: 0, blockHp: 1, damage: 1, armour: 1, fertility: 1, startWeapon: 0, rerolls: 0, cards: 3 };
 
 export interface DefenseStats {
   kills: number;
@@ -55,6 +61,8 @@ export interface DefenseStats {
   rabbitsLost: number;
   blocksBroken: number;
   shots: number;
+  /** Round time when the first rabbit was lost (-1 while none has been). */
+  firstLoss: number;
 }
 
 export type DefenseOutcome = 'playing' | 'lost';
@@ -107,4 +115,8 @@ export interface DefenseState {
   offersMade: number;
   /** Time milestones (every 5 minutes) reached so far. */
   milestones: number;
+  /** Perk offers that can still be redealt this round. */
+  rerolls: number;
+  /** Set once the round's rewards went to the player's profile (so a reload doesn't pay twice). */
+  rewarded: boolean;
 }

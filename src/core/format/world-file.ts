@@ -94,6 +94,7 @@ const DefenseSchema = z.object({
     rabbitsLost: count,
     blocksBroken: count,
     shots: count,
+    firstLoss: z.number().min(-1).max(1e9).default(-1),
   }),
   outcome: z.enum(['playing', 'lost']),
   modifiers: z.object({
@@ -103,6 +104,9 @@ const DefenseSchema = z.object({
     damage: z.number().min(0).max(1000),
     armour: z.number().min(0).max(1000),
     fertility: z.number().min(0).max(1000),
+    startWeapon: int.min(0).max(64).default(0),
+    rerolls: int.min(0).max(1000).default(0),
+    cards: int.min(1).max(8).default(3),
   }),
   // In-round progression (added after the first version-3 files, so every field has a default).
   unlocked: z.array(z.string().min(1).max(64)).max(64).default(['slingshot']),
@@ -114,6 +118,8 @@ const DefenseSchema = z.object({
   offers: z.array(z.array(PerkSchema).max(16)).max(1000).default([]),
   offersMade: count.default(0),
   milestones: count.default(0),
+  rerolls: count.default(0),
+  rewarded: z.boolean().default(false),
 });
 
 export const WorldFileSchema = z.object({
@@ -268,6 +274,8 @@ function encodeDefense(d: DefenseState): DefenseFile {
     offers: d.offers.map((o) => o.map((p) => ({ ...p }))),
     offersMade: d.offersMade,
     milestones: d.milestones,
+    rerolls: d.rerolls,
+    rewarded: d.rewarded,
   };
 }
 
@@ -309,6 +317,8 @@ function decodeDefense(f: DefenseFile): DefenseState {
     offers: f.offers.map((o) => o.map((p) => ({ ...p }))),
     offersMade: f.offersMade,
     milestones: f.milestones,
+    rerolls: f.rerolls,
+    rewarded: f.rewarded,
   };
 }
 

@@ -13,7 +13,7 @@ export const OVERTIME_START = 20 * 60;
  * Each overtime wave multiplies enemy hit points and wave size by these. Hit points matter most:
  * splash and piercing weapons do better against bigger crowds, but not against tougher predators.
  */
-export const OVERTIME_GROWTH = { hp: 1.35, size: 1.1 };
+export const OVERTIME_GROWTH = { hp: 2, size: 1.15 };
 /** How far from the warren predators appear. */
 export const SPAWN_DISTANCE = 70;
 /** Seconds over which a wave's groups arrive. */
@@ -66,7 +66,7 @@ export function overtime(t: number, what: 'hp' | 'size' = 'hp'): number {
  * fast for the first ten minutes or so, then fall behind, and only an upgraded warren lasts to 20.
  */
 export const WAVE_SIZE = { base: 4, perMinute: 2.5, power: 1.25 };
-export const HP_GROWTH = 1.31;
+export const HP_GROWTH = 1.29;
 
 /** Threat points a wave at round time `t` may spend on predators (a fox costs 1). */
 export function threatBudget(t: number): number {

@@ -11,6 +11,7 @@ export interface WorldActions {
   onImport: () => void;
   onSetAuthor: (name: string) => void;
   onSetSpawn: () => void;
+  onCouncil: () => void;
 }
 
 export interface WorldPanelState {
@@ -34,6 +35,7 @@ export function openWorldPanel(state: WorldPanelState, actions: WorldActions): P
       el('button', { class: 'btn', id: 'world-spawn', onclick: actions.onSetSpawn, title: 'Use your current position as where you start in this world' }, 'Set spawn here'),
       el('button', { class: 'btn', id: 'world-export', onclick: actions.onExport }, 'Export current (.world.zip)'),
       el('button', { class: 'btn', id: 'world-import', onclick: actions.onImport }, 'Import .world.zip…'),
+      el('button', { class: 'btn', id: 'world-council', onclick: actions.onCouncil, title: 'Permanent upgrades for Warren Defense, bought with Clover' }, '🍀 Warren Council'),
     ),
     el('label', { class: 'field' }, 'Author name', authorInput),
   );

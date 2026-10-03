@@ -57,6 +57,8 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
       ['K', 'Choose a perk: one of three random cards every wave, and a rare one every 5 minutes'],
       ['U', 'Armory: weapons and what unlocks them, the main weapon, block strength and perks taken'],
       ['Repair', 'Mends damaged blocks for points (the 🔧 button)'],
+      ['Clover', 'Earned every round for time survived, milestones, kills and achievements'],
+      ['Warren Council', 'Spend Clover on permanent upgrades (from the round summary or the World menu, M)'],
     ],
   ],
   [

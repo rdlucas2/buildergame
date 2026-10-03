@@ -64,7 +64,15 @@ to every material, and share what you make as files that anyone can drop into th
     **Repair** mends damaged blocks for points.
   - Kills and waves earn points. The round ends when the last rabbit falls, and the summary shows
     how long the warren held out. Predators get tougher every minute, and from 20:00 every wave is
-    far tougher than the last.
+    far tougher than the last: a new player lasts about 10 minutes, a fully upgraded one about 20.
+  - **Clover and the Warren Council**: every round earns Clover for time survived, each 5-minute
+    milestone, kills and achievements. Spend it at the **Warren Council** (from the round summary or
+    the World menu) on permanent upgrades that make every later round easier: more damage, tougher
+    blocks, more starting budget and rabbits, thicker coats, faster breeding, a starting weapon,
+    perk rerolls and a fourth perk card. Twenty **achievements** (surviving 5 to 25 minutes, a
+    flawless start, hunting each predator, veteran milestones and more) pay Clover too.
+  - Progress is saved in the browser; **Export progress** in the Council saves it as a
+    `.profile.json` file to back up or move to another browser.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 

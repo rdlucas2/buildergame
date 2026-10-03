@@ -126,10 +126,15 @@ export interface RoundSummary {
   waves: number;
   score: number;
   stats: DefenseStats;
+  /** Clover the round earned, by source, and the achievements it earned (names). */
+  reward?: { time: number; milestones: number; kills: number; achievements: number; total: number };
+  earned?: string[];
+  /** Clover to spend after this round. */
+  clover?: number;
 }
 
 /** The end of a round: how long the warren held out and what happened, with a way to go again. */
-export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => void }): PanelHandle {
+export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => void; onCouncil?: () => void }): PanelHandle {
   const panel = openPanel('The warren has fallen', { id: 'round-summary' });
   const kills = Object.entries(s.stats.killsOf)
     .sort((a, b) => b[1] - a[1])
@@ -147,10 +152,26 @@ export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => v
       stat('Blocks broken', String(s.stats.blocksBroken)),
     ),
     kills ? el('p', { class: 'muted small', id: 'round-kills' }, `Driven off: ${kills}.`) : el('span'),
+    s.reward
+      ? el(
+          'div',
+          { class: 'round-reward', id: 'round-reward' },
+          el('div', { class: 'stat-value' }, `🍀 +${s.reward.total} Clover`),
+          el(
+            'div',
+            { class: 'muted small' },
+            [`${s.reward.time} for time survived`, s.reward.milestones ? `${s.reward.milestones} for milestones` : '', s.reward.kills ? `${s.reward.kills} for kills` : '', s.reward.achievements ? `${s.reward.achievements} for achievements` : '']
+              .filter(Boolean)
+              .join(' · ') + (s.clover !== undefined ? `. You have ${s.clover} to spend at the Warren Council.` : '.'),
+          ),
+          s.earned?.length ? el('div', { class: 'small', id: 'round-achievements' }, `🏆 ${s.earned.join(', ')}`) : null,
+        )
+      : el('span'),
     el(
       'div',
       { class: 'row end' },
       el('button', { class: 'btn', onclick: () => panel.close() }, 'Look around'),
+      handlers.onCouncil ? el('button', { class: 'btn', id: 'round-council', onclick: () => (panel.close(), handlers.onCouncil!()) }, 'Warren Council') : null,
       el('button', { class: 'btn primary', id: 'round-restart', onclick: () => (panel.close(), handlers.onRestart()) }, 'New round'),
     ),
   );

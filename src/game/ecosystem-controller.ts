@@ -57,6 +57,9 @@ export class EcosystemController {
   onActivity?: () => void;
   /** Warren Defense: the round was lost (the game shows the summary). */
   onRoundOver?: () => void;
+  /** Called once a second of round time (for live achievements). */
+  onRoundSecond?: (d: Defense) => void;
+  private lastRoundSecond = -1;
   /** Warren Defense: the Fortify button was pressed. */
   onToggleFortify?: () => void;
 
@@ -261,6 +264,11 @@ export class EcosystemController {
         offers: d.offers.length,
         repairPrice: d.repairPrice,
       });
+      const second = Math.floor(d.clock);
+      if (second !== this.lastRoundSecond) {
+        this.lastRoundSecond = second;
+        this.onRoundSecond?.(d);
+      }
       for (const e of d.events.splice(0)) {
         if (e.kind === 'wave') {
           const parts = Object.entries(e.counts).map(([k, n]) => countOf(k, n));

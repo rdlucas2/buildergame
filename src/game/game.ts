@@ -2,6 +2,9 @@ import { decodeWorldBundle, encodeWorldBundle, resolveBundleConflicts } from '..
 import { base64ToBytes, bytesToBase64 } from '../core/format/rle';
 import { serializeStructure, structureDownloadName } from '../core/format/structure-file';
 import { worldDownloadName } from '../core/format/world-file';
+import { decodeProfileFile, encodeProfileFile } from '../core/format/profile-file';
+import type { DefenseModifiers } from '../core/defense-state';
+import type { PlayerProfile } from '../core/profile';
 import { newId } from '../core/ids';
 import { getMaterial } from '../core/materials';
 import type { Vec3 } from '../core/math';
@@ -18,6 +21,8 @@ import { createVoxelMaterials, type VoxelMaterials } from '../render/voxel-mater
 import { downloadBlob, downloadBytes, downloadText, pickFiles, readFileBytes, readFileText } from '../storage/files';
 import { StructureLibrary } from '../storage/library';
 import { WorldStore } from '../storage/worlds';
+import { ProfileStore } from '../storage/profile';
+import { openCouncil } from '../ui/council';
 import { confirmDialog, newWorldDialog, promptDialog } from '../ui/dialogs';
 import { openRoundSummary } from '../ui/defense-hud';
 import { openHelp } from '../ui/help';
@@ -31,7 +36,9 @@ import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
 import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
 import { EcosystemController, type CreatureInfo, type DefenseInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
 import { START_TIME, type Speed } from '../sim/clock';
-import type { ActionResult, DefenseAction } from '../sim/defense/defense';
+import type { ActionResult, Defense, DefenseAction } from '../sim/defense/defense';
+import { buyUpgrade, modifiersFor } from '../sim/defense/council';
+import { awardAchievements, finishRound, newRoundAchievements, type RoundResult, type RoundReward } from '../sim/defense/rewards';
 import { blockCost, blockHp } from '../sim/defense/materials';
 import { Ecosystem } from '../sim/ecosystem';
 import { randomSeed } from '../sim/rng';
@@ -80,8 +87,10 @@ export class Game {
   static async create(container: HTMLElement): Promise<Game> {
     const library = new StructureLibrary(buildExampleStructures());
     const worlds = new WorldStore();
+    const profile = new ProfileStore();
     await library.open();
     await worlds.open();
+    await profile.open();
     let world = worlds.activeWorldId ? worlds.get(worlds.activeWorldId) : undefined;
     if (!world) {
       const first = worlds.list()[0];
@@ -92,7 +101,7 @@ export class Game {
       await worlds.save(world);
     }
     await worlds.setActiveWorldId(world.id);
-    return new Game(container, library, worlds, world);
+    return new Game(container, library, worlds, world, profile);
   }
 
   constructor(
@@ -100,6 +109,7 @@ export class Game {
     readonly library: StructureLibrary,
     readonly worlds: WorldStore,
     world: World,
+    readonly profile: ProfileStore = new ProfileStore(),
   ) {
     this.host = new SceneHost(container);
     this.controls = new FlyControls(this.host.camera, this.host.canvas);
@@ -129,6 +139,7 @@ export class Game {
     this.eco.onActivity = () => this.scheduleSave();
     this.eco.onToggleFortify = () => this.toggleFortify();
     this.eco.onRoundOver = () => this.showRoundSummary();
+    this.eco.onRoundSecond = (d) => this.checkAchievements(d);
     this.eco.attach(world);
     this.applyWorldPose(world);
 
@@ -773,6 +784,7 @@ export class Game {
             render();
           },
           onSetAuthor: (name) => void this.worlds.setAuthor(name.trim()),
+          onCouncil: () => this.openCouncil(),
           onSetSpawn: async () => {
             const pose = this.controls.getPose();
             this.worldMode.load({ ...this.currentWorld(), spawn: { position: pose.position, yaw: pose.yaw, pitch: pose.pitch } });
@@ -794,7 +806,7 @@ export class Game {
    */
   async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number } = {}): Promise<World> {
     const seed = opts.seed ?? randomSeed();
-    const w = opts.defense ? newDefenseWorld(name, seed) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
+    const w = opts.defense ? newDefenseWorld(name, seed, this.roundModifiers()) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
     await this.worlds.save(w);
     await this.switchWorld(w.id);
     return w;
@@ -805,7 +817,10 @@ export class Game {
     const current = this.currentWorld();
     if (!current.ecosystem?.defense) return;
     this.toggleFortify(false);
-    const fresh = newDefenseWorld(current.name, seed);
+    // A round given up part-way still counts: its time, kills and achievements are paid first.
+    const d = this.eco.defense;
+    if (d && d.clock > 0) await this.rewardRound(d);
+    const fresh = newDefenseWorld(current.name, seed, this.roundModifiers());
     const w: World = { ...current, ecosystem: fresh.ecosystem, spawn: fresh.spawn, placements: [] };
     this.worldMode.load(w);
     this.eco.reattach(w);
@@ -814,12 +829,73 @@ export class Game {
     this.refreshHudChrome();
   }
 
-  private showRoundSummary(): void {
+  private async showRoundSummary(): Promise<void> {
     const d = this.eco.defense;
     if (!d) return;
     this.toggleFortify(false);
-    void this.flushSave();
-    openRoundSummary({ clock: d.clock, waves: d.wave, score: d.score, stats: d.stats }, { onRestart: () => void this.restartRound() });
+    const paid = await this.rewardRound(d);
+    openRoundSummary(
+      { clock: d.clock, waves: d.wave, score: d.score, stats: d.stats, reward: paid?.reward, earned: paid?.earned, clover: this.profile.profile.clover },
+      { onRestart: () => void this.restartRound(), onCouncil: () => this.openCouncil() },
+    );
+  }
+
+  // ---- Warren Defense: progress across rounds --------------------------------------------
+
+  /** Modifiers for a new round, from the Warren Council upgrades bought. */
+  private roundModifiers(): DefenseModifiers {
+    return modifiersFor(this.profile.profile.upgrades);
+  }
+
+  private roundResult(d: Defense): RoundResult {
+    return { clock: d.clock, score: d.score, wave: d.wave, stats: d.stats, unlocked: d.unlocked.length, milestones: d.milestones };
+  }
+
+  /** Pays a round's Clover and achievements into the profile, once (the round remembers it was paid). */
+  private async rewardRound(d: Defense): Promise<{ reward: RoundReward; earned: string[] } | null> {
+    if (d.rewarded) return null;
+    const r = finishRound(this.profile.profile, this.roundResult(d), new Date().toISOString());
+    d.rewarded = true;
+    await this.profile.save(r.profile);
+    await this.flushSave();
+    return { reward: r.reward, earned: r.earned.map((a) => a.name) };
+  }
+
+  /** Awards round achievements as soon as they are met, so leaving mid-round doesn't lose them. */
+  private checkAchievements(d: Defense): void {
+    if (d.rewarded || d.over) return;
+    const list = newRoundAchievements(this.profile.profile, this.roundResult(d));
+    if (list.length === 0) return;
+    void this.profile.save(awardAchievements(this.profile.profile, list, new Date().toISOString()));
+    for (const a of list) toast(`🏆 Achievement: ${a.name} (+${a.clover} Clover)`, 'success', 4500);
+  }
+
+  /** The Warren Council: permanent upgrades and achievements. */
+  openCouncil(): void {
+    openCouncil(() => this.profile.profile, {
+      buy: (id) => this.buyUpgrade(id),
+      exportProfile: () => downloadText('buildergame.profile.json', JSON.stringify(encodeProfileFile(this.profile.profile), null, 2)),
+      importProfile: async () => {
+        const files = await pickFiles('.json,application/json', false);
+        if (!files[0]) return;
+        try {
+          const p = decodeProfileFile(JSON.parse(await readFileText(files[0])));
+          if (!(await confirmDialog('Import progress', 'Replace your Clover, upgrades and achievements with the imported file?', 'Replace'))) return;
+          await this.profile.save(p);
+          toast('Progress imported.', 'success');
+        } catch (e) {
+          toast((e as Error).message, 'error', 4000);
+        }
+      },
+    });
+  }
+
+  /** Buys a Warren Council upgrade; returns why it couldn't, or null. */
+  async buyUpgrade(id: string): Promise<string | null> {
+    const r = buyUpgrade(this.profile.profile, id);
+    if (!r.ok) return r.reason;
+    await this.profile.save(r.profile);
+    return null;
   }
 
   // ---- Warren Defense: fortify ----------------------------------------------------------
@@ -1101,6 +1177,9 @@ export class Game {
       fortify: (on) => g.toggleFortify(on),
       fortifyAim: () => (g.eco.fortify.active ? { voxel: g.eco.fortify.voxel, place: g.eco.fortify.place } : null),
       restartRound: (seed) => g.restartRound(seed),
+      profile: () => structuredClone(g.profile.profile),
+      councilBuy: (id) => g.buyUpgrade(id),
+      council: () => g.openCouncil(),
       switchWorld: (id) => g.switchWorld(id),
       flushSave: () => g.flushSave(),
       exportWorldBundleBase64: () => bytesToBase64(g.encodeWorldBundle()),
@@ -1204,6 +1283,12 @@ export interface GameDebug {
   fortifyAim(): { voxel: Vec3 | null; place: Vec3 | null } | null;
   /** Starts a new round in the current Warren Defense world. */
   restartRound(seed?: number): Promise<void>;
+  /** The player's Warren Defense progress: Clover, upgrades, achievements, lifetime totals. */
+  profile(): PlayerProfile;
+  /** Buys a Warren Council upgrade level; resolves with why it couldn't, or null. */
+  councilBuy(id: string): Promise<string | null>;
+  /** Opens the Warren Council panel. */
+  council(): void;
   switchWorld(id: string): Promise<boolean>;
   flushSave(): Promise<void>;
   exportWorldBundleBase64(): string;
@@ -1229,8 +1314,8 @@ declare global {
  * A new Warren Defense world: wild terrain, the starter warren beside the water with the herd
  * inside, and a spawn point looking down on it.
  */
-export function newDefenseWorld(name: string, seed: number): World {
-  const eco = Ecosystem.create(DEFENSE_GROUND, seed, { defense: {} });
+export function newDefenseWorld(name: string, seed: number, modifiers: Partial<DefenseModifiers> = {}): World {
+  const eco = Ecosystem.create(DEFENSE_GROUND, seed, { defense: modifiers });
   const site = eco.defense!.site;
   return createWorld({
     name,
