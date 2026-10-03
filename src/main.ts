@@ -11,7 +11,11 @@ Game.create(container)
   .catch((err: unknown) => {
     console.error(err);
     const msg = err instanceof Error ? err.message : String(err);
-    container.innerHTML = `<div class="start-overlay"><div class="start-card"><h1>Buildergame could not start</h1><p>${escapeHtml(msg)}</p><p class="muted">This game needs WebGL. Try a current version of Chrome, Firefox, Edge or Safari.</p></div></div>`;
+    // Only blame WebGL when it is WebGL that failed.
+    const hint = /webgl/i.test(msg)
+      ? 'This game needs WebGL. Try a current version of Chrome, Firefox, Edge or Safari.'
+      : 'Something went wrong while starting. Your worlds and structures are still saved in this browser: try reloading the page.';
+    container.innerHTML = `<div class="start-overlay"><div class="start-card"><h1>Buildergame could not start</h1><p>${escapeHtml(msg)}</p><p class="muted">${hint}</p></div></div>`;
     document.body.dataset.ready = 'error';
   });
 

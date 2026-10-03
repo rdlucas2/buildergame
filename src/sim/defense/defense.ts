@@ -100,6 +100,27 @@ export function emptyStats(): DefenseStats {
 }
 
 /**
+ * A saved round with everything later versions added filled in. World files get these defaults
+ * when they are read; worlds kept in the browser are stored as they were saved, so a round saved by
+ * an earlier version (before weapons, perks, the Council...) is brought up to date here.
+ */
+export function upgradeState(saved: DefenseState): DefenseState {
+  const modifiers = { ...NO_MODIFIERS, ...defined(saved.modifiers ?? {}) };
+  return {
+    ...emptyProgression(modifiers),
+    ...(defined(saved) as DefenseState),
+    modifiers,
+    stats: { ...emptyStats(), ...defined(saved.stats ?? {}) },
+    orders: saved.orders ?? [],
+  };
+}
+
+/** The object without its undefined properties (so they don't hide defaults when spread). */
+function defined<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+/**
  * The in-round progression a round starts with: the slingshot (and any weapons the starting-weapon
  * upgrade adds), soft to stone blocks, no perks, and the rerolls upgrades give.
  */
@@ -182,8 +203,9 @@ export class Defense implements DefenseContext {
 
   constructor(
     private readonly eco: Ecosystem,
-    state: DefenseState,
+    saved: DefenseState,
   ) {
+    const state = upgradeState(saved);
     this.site = { ...state.site };
     this.base = new DefenseBase(state.base);
     this.clock = state.clock;
