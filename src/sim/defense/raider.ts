@@ -86,9 +86,7 @@ function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number
     }
     c.heading = Math.atan2(prey.x - c.x, prey.z - c.z);
     if (c.cooldown <= 0) {
-      // Tougher (later) predators bite harder, though less than their extra hit points.
-      const toughness = Math.sqrt((c.maxHp ?? def.maxHp) / def.maxHp);
-      pop.damage(prey, def.bite * toughness * ctx.biteMult(prey), { cause: 'eaten', killer: c });
+      pop.damage(prey, def.bite * toughness(c) * ctx.biteMult(prey), { cause: 'eaten', killer: c });
       c.cooldown = def.biteCooldown;
     }
     return true;
@@ -99,7 +97,8 @@ function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number
       if (!pop.nav.solids.solid(next.x, next.y + i, next.z)) continue;
       c.activity = 'breach';
       c.heading = Math.atan2(next.x + 0.5 - c.x, next.z + 0.5 - c.z);
-      ctx.chew(c, next.x, next.y + i, next.z, def.blockDamage * dt);
+      // Tougher (later) predators break blocks faster too, like they bite harder.
+      ctx.chew(c, next.x, next.y + i, next.z, def.blockDamage * toughness(c) * dt);
       return true;
     }
     if (c.activity === 'breach') c.activity = 'raid';
@@ -112,6 +111,12 @@ function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number
     c.path = [];
   }
   return true;
+}
+
+/** Tougher (later) predators bite and break blocks harder, though less than their extra hit points. */
+function toughness(c: Creature): number {
+  const def = defOf(c);
+  return Math.sqrt((c.maxHp ?? def.maxHp) / def.maxHp);
 }
 
 /** Plans a walk to a ground cell near (x, z). */

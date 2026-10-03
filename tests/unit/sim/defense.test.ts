@@ -156,8 +156,9 @@ describe('breach fields', () => {
 
   it('are shared by a whole wave and stay cheap', () => {
     const e = Ecosystem.create(256, 9, { defense: {} });
-    e.advance(240);
     const d = e.defense!;
+    d.apply({ type: 'allocate', defenders: 0 }); // nobody shoots, so the wave piles up
+    e.advance(200);
     const raiders = e.population.creatures.filter((c) => c.species === 'predator' && c.deadFor < 0);
     expect(raiders.length).toBeGreaterThan(3);
     const t0 = performance.now();
@@ -296,13 +297,16 @@ describe('a defense round', () => {
     expect(e.population.creatures.filter((c) => c.role === 'defender')).toHaveLength(7);
     const free = d.budget - d.base.cost();
     let placed = 0;
-    for (let x = d.base.origin.x; x < d.base.origin.x + 48 && placed * 8 <= free; x++) if (d.apply({ type: 'place', x, y: 10, z: d.base.origin.z, material: 'iron' }).ok) placed++;
+    for (let z = d.base.origin.z; z < d.base.origin.z + 48 && placed * 3 + 3 <= free; z++)
+      for (let x = d.base.origin.x; x < d.base.origin.x + 48 && placed * 3 + 3 <= free; x++) if (d.apply({ type: 'place', x, y: 10, z, material: 'cobblestone' }).ok) placed++;
     expect(d.base.cost()).toBeLessThanOrEqual(d.budget);
-    expect(d.apply({ type: 'place', x: d.base.origin.x + 47, y: 12, z: d.base.origin.z + 47, material: 'iron' })).toEqual({ ok: false, reason: 'Over the block budget.' });
+    expect(d.apply({ type: 'place', x: d.base.origin.x + 47, y: 12, z: d.base.origin.z + 47, material: 'cobblestone' })).toEqual({ ok: false, reason: 'Over the block budget.' });
     expect(d.apply({ type: 'buyBudget' }).ok).toBe(false); // no points yet
     d.points = 1000;
     expect(d.apply({ type: 'buyBudget' }).ok).toBe(true);
-    expect(d.apply({ type: 'place', x: d.base.origin.x + 47, y: 12, z: d.base.origin.z + 47, material: 'iron' }).ok).toBe(true);
+    expect(d.apply({ type: 'place', x: d.base.origin.x + 47, y: 12, z: d.base.origin.z + 47, material: 'cobblestone' }).ok).toBe(true);
+    // Metal blocks unlock later in the round.
+    expect(d.apply({ type: 'place', x: d.base.origin.x + 46, y: 12, z: d.base.origin.z + 47, material: 'iron' })).toEqual({ ok: false, reason: 'Metal blocks are not unlocked yet.' });
   });
 
   it('brings the same waves for a seed, whatever the player does', () => {

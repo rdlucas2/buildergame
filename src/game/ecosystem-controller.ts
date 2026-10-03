@@ -11,9 +11,12 @@ import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
 import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
 import { SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
 import type { Defense, DefenseAction, ActionResult } from '../sim/defense/defense';
+import { TIERS } from '../sim/defense/materials';
+import { WEAPONS } from '../sim/defense/weapons';
 import { Ecosystem, PACK_SIZE } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
+import { openArmory, openPerkOffer } from '../ui/armory';
 import { countOf, DefenseHud } from '../ui/defense-hud';
 import { EcosystemHud, openNaturePanel } from '../ui/ecosystem-hud';
 import { toast } from '../ui/toast';
@@ -77,6 +80,9 @@ export class EcosystemController {
         if (d) this.applyDefense({ type: 'allocate', defenders: d.allocation + delta });
       },
       onFortify: () => this.onToggleFortify?.(),
+      onPerk: () => this.openPerks(),
+      onRepair: () => this.report(this.applyDefense({ type: 'repair' }), 'Repairs done.'),
+      onArmory: () => this.openArmory(),
     });
     worldMode.group.add(this.fortify.group);
     const lookup = (id: string) => this.library.get(id);
@@ -114,6 +120,22 @@ export class EcosystemController {
     const r = d.apply(action);
     if (r.ok) this.onActivity?.();
     return r;
+  }
+
+  /** The Armory panel: weapons, block strength and perks. */
+  openArmory(): boolean {
+    const d = this.defense;
+    if (!d) return false;
+    openArmory(d, (a) => this.applyDefense(a));
+    return true;
+  }
+
+  /** The waiting perk offer, if any. */
+  openPerks(): boolean {
+    const d = this.defense;
+    if (!d) return false;
+    openPerkOffer(d, (a) => this.applyDefense(a));
+    return true;
   }
 
   private report(r: ActionResult, success: string): void {
@@ -236,6 +258,8 @@ export class EcosystemController {
         predators: eco.population.count('predator'),
         fortifying: this.fortify.active,
         over: d.over,
+        offers: d.offers.length,
+        repairPrice: d.repairPrice,
       });
       for (const e of d.events.splice(0)) {
         if (e.kind === 'wave') {
@@ -243,6 +267,14 @@ export class EcosystemController {
           toast(`Wave ${e.n}: ${parts.join(', ')}`, 'info', 3500);
         } else if (e.kind === 'lost') {
           this.onRoundOver?.();
+        } else if (e.kind === 'unlock') {
+          toast(`${WEAPONS[e.weapon].name} unlocked!${d.mainWeapon === e.weapon ? ' Defenders now carry it.' : ''}`, 'success', 4000);
+        } else if (e.kind === 'tier') {
+          toast(`${TIERS[e.tier].name} blocks unlocked for Fortify.`, 'success', 4000);
+        } else if (e.kind === 'offer') {
+          if (e.pending === 1) toast('A perk to choose: press K.', 'info', 3000);
+        } else if (e.kind === 'milestone') {
+          toast(`${e.minutes}:00 survived! A rare perk is waiting (K).`, 'success', 4500);
         }
       }
     }
@@ -339,6 +371,14 @@ export class EcosystemController {
       damaged: d.base.damaged().length,
       stats: structuredClone(d.stats),
       fortifying: this.fortify.active,
+      unlocked: [...d.unlocked],
+      mainWeapon: d.mainWeapon,
+      loadout: { ...d.loadout },
+      tiers: d.tiers,
+      strength: [...d.strength],
+      perks: d.perks.length,
+      offers: d.offers.length,
+      repairPrice: d.repairPrice,
     };
   }
 
@@ -517,6 +557,14 @@ export interface DefenseInfo {
   posts: Array<{ x: number; y: number; z: number }>;
   damaged: number;
   stats: DefenseStats;
+  unlocked: string[];
+  mainWeapon: string;
+  loadout: Record<string, number>;
+  tiers: number;
+  strength: number[];
+  perks: number;
+  offers: number;
+  repairPrice: number;
   fortifying: boolean;
 }
 

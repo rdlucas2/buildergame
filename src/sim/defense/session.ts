@@ -1,8 +1,12 @@
-import { NO_MODIFIERS, type DefenseModifiers, type DefenseStats } from '../../core/defense-state';
+import { NO_MODIFIERS, type DefenseModifiers, type DefenseStats, type PerkCard } from '../../core/defense-state';
 import type { CreatureKind } from '../../core/world';
 import { kindOf } from '../creatures';
 import { Ecosystem } from '../ecosystem';
+import { progressOf } from './criteria';
 import type { ActionResult, Defense, DefenseAction } from './defense';
+import { TIERS } from './materials';
+import { WEAPON_UNLOCKS } from './unlocks';
+import { WEAPON_LIST } from './weapons';
 
 /** What a player (or a bot) can see of a round, as plain data. */
 export interface DefenseObservation {
@@ -29,6 +33,22 @@ export interface DefenseObservation {
   blocks: number;
   damaged: number;
   posts: number;
+  /** Points to repair every damaged block. */
+  repairPrice: number;
+  /** Weapons unlocked, the main one, and how many defenders carry each of the others. */
+  unlocked: string[];
+  mainWeapon: string;
+  loadout: Record<string, number>;
+  /** Weapons still locked, with how far along their unlock is (0 to 1). */
+  locked: Array<{ weapon: string; progress: number }>;
+  /** Material tiers that can be built with, strength levels per tier and the price of the next. */
+  tiers: number;
+  strength: number[];
+  strengthPrices: number[];
+  /** The perk cards to choose from now (the oldest offer), and how many offers are waiting. */
+  offer: PerkCard[];
+  pendingOffers: number;
+  perks: number;
 }
 
 /**
@@ -105,6 +125,17 @@ export class DefenseSession {
       blocks: d.base.blocks(),
       damaged: d.base.damaged().length,
       posts: d.base.posts().length,
+      repairPrice: d.repairPrice,
+      unlocked: [...d.unlocked],
+      mainWeapon: d.mainWeapon,
+      loadout: { ...d.loadout },
+      locked: WEAPON_LIST.filter((w) => !d.unlocked.includes(w.id)).map((w) => ({ weapon: w.id, progress: Math.round(progressOf(WEAPON_UNLOCKS[w.id]!, d.progress) * 100) / 100 })),
+      tiers: d.tiers,
+      strength: [...d.strength],
+      strengthPrices: TIERS.map((_, t) => d.strengthPrice(t)),
+      offer: (d.offers[0] ?? []).map((c) => ({ ...c })),
+      pendingOffers: d.offers.length,
+      perks: d.perks.length,
     };
   }
 }

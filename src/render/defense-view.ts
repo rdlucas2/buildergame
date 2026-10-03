@@ -1,7 +1,8 @@
-import { BoxGeometry, Color, Group, InstancedMesh, MeshBasicMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, Group, InstancedMesh, MeshBasicMaterial, Object3D, Vector3 } from 'three';
 import { paletteEntryForMaterialId } from '../core/structure';
 import type { Combat } from '../sim/defense/combat';
 import type { DefenseBase } from '../sim/defense/base';
+import { WEAPONS } from '../sim/defense/weapons';
 import { ChunkedGridMesh } from './chunked-grid-mesh';
 import { meshPaletteFromEntries } from './mesh-palette';
 import type { VoxelMaterials } from './voxel-materials';
@@ -9,8 +10,8 @@ import type { VoxelMaterials } from './voxel-materials';
 /** Crack overlays darken blocks in three steps of wear. */
 const CRACK_LEVELS = [0.18, 0.36, 0.55];
 const CRACK_REFRESH = 0.25;
-/** Projectile colour by weapon. */
-const SHOT_COLORS: Record<string, string> = { slingshot: '#b9b4aa' };
+/** Shots are drawn as cubes of this size, scaled to each weapon's. */
+const SHOT_SIZE = 0.14;
 
 /**
  * Draws a defense round: the warren's blocks (remeshed chunk by chunk as they are built or
@@ -23,9 +24,14 @@ export class DefenseView {
   private readonly cracks: InstancedMesh[] = [];
   private readonly crackMaterials: MeshBasicMaterial[] = [];
   private readonly cube = new BoxGeometry(1.02, 1.02, 1.02);
-  private readonly shotGeometry = new BoxGeometry(0.14, 0.14, 0.14);
+  private readonly shotGeometry = new BoxGeometry(SHOT_SIZE, SHOT_SIZE, SHOT_SIZE);
   private readonly shotMaterial = new MeshBasicMaterial({ color: 0xffffff });
   private shots: InstancedMesh;
+  private readonly beamGeometry = new BoxGeometry(1, 1, 1);
+  private readonly beamMaterial = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
+  private beams: InstancedMesh;
+  private readonly from = new Vector3();
+  private readonly to = new Vector3();
   private crackVersion = -1;
   private crackTimer = 0;
   private readonly tmp = new Object3D();
@@ -61,6 +67,7 @@ export class DefenseView {
       this.group.add(mesh);
     }
     this.shots = this.newShots(64);
+    this.beams = this.newBeams(16);
     this.blocks.update();
   }
 
@@ -77,6 +84,16 @@ export class DefenseView {
     return mesh;
   }
 
+  private newBeams(capacity: number): InstancedMesh {
+    const mesh = new InstancedMesh(this.beamGeometry, this.beamMaterial, capacity);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.name = 'beams';
+    mesh.renderOrder = 6;
+    this.group.add(mesh);
+    return mesh;
+  }
+
   /** Per frame: remesh changed chunks, refresh cracks now and then, and place shots. */
   update(dt: number, alpha: number): void {
     this.blocks.update();
@@ -87,6 +104,7 @@ export class DefenseView {
       this.updateCracks();
     }
     this.updateShots(alpha);
+    this.updateBeams();
   }
 
   /** Rebuilds the crack overlays right away (tests and screenshots). */
@@ -129,15 +147,47 @@ export class DefenseView {
       this.shots = this.newShots(list.length * 2);
     }
     list.forEach((p, i) => {
+      const w = WEAPONS[p.weapon];
       this.tmp.position.set(p.px + (p.x - p.px) * alpha, p.py + (p.y - p.py) * alpha, p.pz + (p.z - p.pz) * alpha);
+      this.tmp.scale.setScalar((w?.size ?? SHOT_SIZE) / SHOT_SIZE);
+      this.tmp.rotation.set(0, 0, 0);
       this.tmp.updateMatrix();
       this.shots.setMatrixAt(i, this.tmp.matrix);
-      this.color.set(SHOT_COLORS[p.weapon] ?? '#ffffff');
+      this.color.set(w?.color ?? '#ffffff');
       this.shots.setColorAt(i, this.color);
     });
+    this.tmp.scale.setScalar(1);
     this.shots.count = list.length;
     this.shots.instanceMatrix.needsUpdate = true;
     if (this.shots.instanceColor) this.shots.instanceColor.needsUpdate = true;
+  }
+
+  /** Hitscan beams: thin bars from the shooter to where the beam stopped. */
+  private updateBeams(): void {
+    const list = this.combat.beams;
+    if (list.length > this.beams.instanceMatrix.count) {
+      this.group.remove(this.beams);
+      this.beams.dispose();
+      this.beams = this.newBeams(list.length * 2);
+    }
+    list.forEach((b, i) => {
+      this.from.set(b.x0, b.y0, b.z0);
+      this.to.set(b.x1, b.y1, b.z1);
+      const w = WEAPONS[b.weapon];
+      const thick = w?.size ?? 0.06;
+      this.tmp.position.copy(this.from).add(this.to).multiplyScalar(0.5);
+      this.tmp.lookAt(this.to);
+      this.tmp.scale.set(thick, thick, Math.max(0.01, this.from.distanceTo(this.to)));
+      this.tmp.updateMatrix();
+      this.beams.setMatrixAt(i, this.tmp.matrix);
+      this.color.set(w?.color ?? '#ffffff');
+      this.beams.setColorAt(i, this.color);
+    });
+    this.tmp.scale.setScalar(1);
+    this.tmp.rotation.set(0, 0, 0);
+    this.beams.count = list.length;
+    this.beams.instanceMatrix.needsUpdate = true;
+    if (this.beams.instanceColor) this.beams.instanceColor.needsUpdate = true;
   }
 
   dispose(): void {
@@ -146,6 +196,9 @@ export class DefenseView {
     for (const m of this.cracks) m.dispose();
     for (const m of this.crackMaterials) m.dispose();
     this.shots.dispose();
+    this.beams.dispose();
+    this.beamGeometry.dispose();
+    this.beamMaterial.dispose();
     this.cube.dispose();
     this.shotGeometry.dispose();
     this.shotMaterial.dispose();

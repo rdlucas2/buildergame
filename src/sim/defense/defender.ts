@@ -43,7 +43,7 @@ export function makeDefender(ctx: DefenseContext): Behaviour {
     interval: (pop) => 0.4 + pop.rng.next() * 0.2,
     act: (pop, c, dt) => {
       c.reload = Math.max(0, c.reload - dt);
-      if (c.reload <= 0 && c.activity !== 'drink' && c.activity !== 'graze') shoot(ctx, c);
+      if (c.reload <= 0 && c.activity !== 'drink' && c.activity !== 'graze') shoot(ctx, pop, c);
       if (c.activity === 'graze' || c.activity === 'drink') return false;
       if (c.path.length > c.step) pop.follow(c, dt, c.activity === 'flee' ? 1.5 : 1);
       return true;
@@ -51,22 +51,21 @@ export function makeDefender(ctx: DefenseContext): Behaviour {
   };
 }
 
-function shoot(ctx: DefenseContext, c: Creature): void {
+function shoot(ctx: DefenseContext, pop: Population, c: Creature): void {
   const w = ctx.weaponFor(c);
-  const range = w.range + ctx.rangeBonus(c, w);
-  const target = ctx.findTarget(c, w, range);
+  const target = ctx.findTarget(c, w, w.range);
   if (!target) return;
   c.heading = Math.atan2(target.x - c.x, target.z - c.z);
   const pellets = w.pellets ?? 1;
-  const mult = ctx.damageMult(c, w);
-  const shot = { ...w, range };
+  const crit = ctx.critChance(c, w);
+  const mult = crit > 0 && pop.rng.next() < crit ? 2 : 1;
   // The middle pellet goes straight at the target; if even that is blocked, hold fire.
-  if (!ctx.combat.fire(c, target, shot, mult)) return;
+  if (!ctx.combat.fire(c, target, w, mult)) return;
   for (let i = 1; i < pellets; i++) {
     const offset = (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * ((w.spread ?? 0) / Math.max(1, pellets - 1));
-    ctx.combat.fire(c, target, shot, mult, offset);
+    ctx.combat.fire(c, target, w, mult, offset);
   }
-  c.reload = w.cooldown * ctx.cooldownMult(c, w);
+  c.reload = w.cooldown;
 }
 
 /** Is a predator within `radius` cells? */

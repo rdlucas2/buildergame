@@ -2,8 +2,10 @@
  * Balance runner: plays Warren Defense rounds headless with scripted policies over many seeds and
  * reports how long the warren survives. Run with `npm run balance -- --seeds 12 --policy all`.
  */
+import type { DefenseModifiers } from '../src/core/defense-state';
 import { DefenseSession, type DefenseObservation } from '../src/sim/defense/session';
 import type { DefenseAction } from '../src/sim/defense/defense';
+import { WEAPONS } from '../src/sim/defense/weapons';
 
 type Policy = (o: DefenseObservation, s: DefenseSession) => DefenseAction[];
 
@@ -42,25 +44,62 @@ const POLICIES: Record<string, Policy> = {
   /** A control: nobody defends, so this shows what the defenders are worth. */
   undefended: (o) => (o.allocation ? [{ type: 'allocate', defenders: 0 }] : []),
   passive: () => [],
+  /** More defenders as the colony grows, and the first perk card offered. */
   steady: (o) => steady(o),
-  /** Steady, plus iron over the gaps at the start and more budget for it whenever points allow. */
+  /**
+   * Steady, picking the best perk for the main weapon; more lookouts at the start; the lintels over
+   * the gaps rebuilt in the strongest unlocked material; repairs, stone strength and budget as
+   * points allow.
+   */
   fortify: (o, s) => {
-    const actions = steady(o);
-    if (o.clock === 0) {
-      for (const p of lintels(s)) actions.push({ type: 'remove', ...p }, { type: 'place', ...p, material: 'iron' });
-      for (const p of lookoutSpots(s)) actions.push({ type: 'place', ...p, material: 'lookout' });
+    const actions = steady(o, bestPerk(o));
+    if (o.clock === 0) for (const p of lookoutSpots(s)) actions.push({ type: 'place', ...p, material: 'lookout' });
+    const best = o.tiers >= 5 ? 'iron' : o.tiers >= 4 ? 'stone_bricks' : 'cobblestone';
+    for (const p of lintels(s)) {
+      const m = s.defense.base.materialAt(p.x, p.y, p.z);
+      if (m === best) continue;
+      if (m) actions.push({ type: 'remove', ...p });
+      actions.push({ type: 'place', ...p, material: best });
     }
-    if (o.points >= o.budgetPrice && o.budget - o.cost < 60) actions.push({ type: 'buyBudget' });
-    for (const p of lintels(s)) if (s.defense.base.materialAt(p.x, p.y, p.z) !== 'iron') actions.push({ type: 'place', ...p, material: 'iron' });
+    let points = o.points;
+    if (o.repairPrice > 0 && points >= Math.min(o.repairPrice, 40)) {
+      actions.push({ type: 'repair' });
+      points -= o.repairPrice;
+    }
+    if (points >= o.budgetPrice && o.budget - o.cost < 60) {
+      actions.push({ type: 'buyBudget' });
+      points -= o.budgetPrice;
+    }
+    if (points >= o.strengthPrices[2] * 2) actions.push({ type: 'strengthen', tier: 2 });
     return actions;
   },
 };
 
-function steady(o: DefenseObservation): DefenseAction[] {
+function steady(o: DefenseObservation, perk = 0): DefenseAction[] {
   const actions: DefenseAction[] = [];
   const want = Math.max(4, Math.round((o.rabbits - o.young) * 0.4));
   if (want !== o.allocation) actions.push({ type: 'allocate', defenders: want });
+  if (o.offer.length > 0) actions.push({ type: 'pickPerk', index: perk });
   return actions;
+}
+
+const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 };
+
+/** The card that helps the main weapon most (or failing that, the rarest). */
+function bestPerk(o: DefenseObservation): number {
+  const main = WEAPONS[o.mainWeapon].class;
+  let best = 0;
+  let bestScore = -Infinity;
+  o.offer.forEach((c, i) => {
+    let score = RARITY_RANK[c.rarity] * 2;
+    if (c.target === main || c.target === 'all') score += c.kind === 'damage' || c.kind === 'rate' || c.kind === 'multishot' ? 4 : 2;
+    if (c.kind === 'armour' || c.kind === 'regen') score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  });
+  return best;
 }
 
 function arg(name: string, fallback: string): string {
@@ -68,7 +107,18 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
+/**
+ * Permanent-upgrade bonuses to test with: none, about half way, and everything bought. (The
+ * Warren Council's upgrades add up to these; see the plan's power budget.)
+ */
+const PROFILES: Record<string, Partial<DefenseModifiers>> = {
+  fresh: {},
+  mid: { damage: 1.6, blockHp: 1.3, armour: 0.85, budget: 150, rabbits: 3, fertility: 1.2 },
+  max: { damage: 2.5, blockHp: 1.8, armour: 0.7, budget: 400, rabbits: 8, fertility: 1.5 },
+};
+
 const seeds = Number(arg('seeds', '8'));
+const profiles = arg('profile', 'fresh').split(',');
 const maxSeconds = Number(arg('max', '1800'));
 const which = arg('policy', 'all');
 const names = which === 'all' ? Object.keys(POLICIES) : which.split(',');
@@ -79,22 +129,24 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
-for (const name of names) {
+for (const profile of profiles) for (const name of names) {
+  const modifiers = PROFILES[profile];
+  if (!modifiers) throw new Error(`Unknown profile ${profile}; try ${Object.keys(PROFILES).join(', ')}`);
   const policy = POLICIES[name];
   if (!policy) throw new Error(`Unknown policy ${name}; try ${Object.keys(POLICIES).join(', ')}`);
   const times: number[] = [];
   const rows: string[] = [];
   const started = Date.now();
   for (let seed = 1; seed <= seeds; seed++) {
-    const s = DefenseSession.create({ seed });
+    const s = DefenseSession.create({ seed, modifiers });
     while (!s.over && s.clock < maxSeconds) {
       for (const a of policy(s.observe(), s)) s.apply(a);
       s.advance(10);
     }
     const o = s.observe();
     times.push(o.clock);
-    rows.push(`  seed ${String(seed).padStart(3)}  ${fmt(o.clock).padStart(6)}  wave ${String(o.wave).padStart(2)}  kills ${String(o.stats.kills).padStart(4)}  lost ${String(o.stats.rabbitsLost).padStart(3)}  blocks broken ${String(o.stats.blocksBroken).padStart(3)}  score ${o.score}`);
+    rows.push(`  seed ${String(seed).padStart(3)}  ${fmt(o.clock).padStart(6)}  wave ${String(o.wave).padStart(2)}  kills ${String(o.stats.kills).padStart(4)}  lost ${String(o.stats.rabbitsLost).padStart(3)}  blocks broken ${String(o.stats.blocksBroken).padStart(3)}  score ${String(o.score).padStart(6)}  ${o.mainWeapon}, ${o.perks} perks`);
   }
-  console.log(`\n${name}: median ${fmt(median(times))}, range ${fmt(Math.min(...times))}–${fmt(Math.max(...times))} over ${seeds} seeds (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+  console.log(`\n${profile} ${name}: median ${fmt(median(times))}, range ${fmt(Math.min(...times))}–${fmt(Math.max(...times))} over ${seeds} seeds (${((Date.now() - started) / 1000).toFixed(1)} s)`);
   for (const r of rows) console.log(r);
 }

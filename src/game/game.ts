@@ -432,6 +432,8 @@ export class Game {
       this.toggleFortify();
       return true;
     }
+    if (!sm && code === 'KeyU' && this.eco.defense) return this.eco.openArmory();
+    if (!sm && code === 'KeyK' && this.eco.defense) return this.eco.openPerks();
     if (!sm && this.eco.fortify.active) {
       if (/^Digit[1-9]$/.test(code)) {
         this.fortifySlot = Number(code.slice(5)) - 1;

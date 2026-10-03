@@ -100,19 +100,77 @@ test('Fortify builds and breaks warren blocks within the budget', async ({ page 
   expect(await page.evaluate(() => window.__game!.act(0))).toBe(true);
   expect((await info(page)).cost).toBe(start.cost);
 
+  // Metal blocks are locked at the start of a round.
+  await page.keyboard.press('Digit4'); // iron
+  expect(await page.evaluate(() => window.__game!.act(2))).toBe(false);
+  await expect(page.locator('.toast', { hasText: 'Metal blocks are not unlocked yet.' })).toBeVisible();
+
   // Over the budget nothing is built.
-  await page.keyboard.press('Digit4'); // iron, cost 8
+  await page.keyboard.press('Digit1'); // cobblestone, cost 3
   const free = start.budget - start.cost;
-  // Fill a row along the edge of the buildable area with iron until the budget is nearly spent.
-  for (let i = 0; i < Math.floor(free / 8); i++) await page.evaluate((r) => window.__game!.defenseApply({ type: 'place', x: r.x + r.i, y: 0, z: r.z, material: 'iron' }), { ...start.origin, i });
+  // Fill rows along the edge of the buildable area with cobblestone until the budget is nearly spent.
+  await page.evaluate(
+    (r) => {
+      for (let i = 0; i < r.n; i++) window.__game!.defenseApply({ type: 'place', x: r.x + (i % 40), y: 0, z: r.z + Math.floor(i / 40), material: 'cobblestone' });
+    },
+    { ...start.origin, n: Math.floor(free / 3) },
+  );
   const full = await info(page);
-  expect(full.cost).toBeGreaterThan(full.budget - 8);
+  expect(full.cost).toBeGreaterThan(full.budget - 3);
   await frames(page);
   expect(await page.evaluate(() => window.__game!.fortifyAim())).toEqual({ voxel: null, place: { x: spot.x, y: 0, z: spot.z } });
   expect(await page.evaluate(() => window.__game!.act(2))).toBe(false);
   await expect(page.locator('.toast', { hasText: 'Over the block budget.' })).toBeVisible();
   await page.keyboard.press('KeyF');
   await expect(page.locator('#hud-mode')).toHaveText('Warren Defense: Masonry');
+});
+
+test('perks are picked from cards, and the Armory shows weapons, unlocks and block strength', async ({ page }) => {
+  const errors = await boot(page);
+  await defenseWorld(page, 'Armoury');
+  await advance(page, 90);
+  let d = await info(page);
+  expect(d.wave).toBe(2);
+  expect(d.offers).toBe(1);
+  await frames(page);
+  await expect(page.locator('#def-perk')).toBeVisible();
+
+  // K opens the offer: three cards, pick one.
+  await page.keyboard.press('KeyK');
+  const offer = page.locator('#perk-offer');
+  await expect(offer).toBeVisible();
+  await expect(offer.locator('.perk-card')).toHaveCount(3);
+  await page.screenshot({ path: `${SHOTS}/defense-perk-offer.png` });
+  await offer.locator('.perk-card').first().click();
+  await expect(offer).toBeHidden();
+  d = await info(page);
+  expect(d.perks).toBe(1);
+  expect(d.offers).toBe(0);
+  await frames(page);
+  await expect(page.locator('#def-perk')).toBeHidden();
+
+  // U opens the Armory: every weapon, the locked ones with what unlocks them.
+  await page.keyboard.press('KeyU');
+  const armory = page.locator('#armory');
+  await expect(armory).toBeVisible();
+  await expect(armory.locator('.armory-weapon')).toHaveCount(9);
+  await expect(armory.locator('.armory-weapon[data-weapon="slingshot"]')).toContainText('Main');
+  await expect(armory.locator('.armory-weapon[data-weapon="musket"]')).toContainText('Survive 6:00 and earn 1500 points');
+  await expect(armory.locator('.armory-tier[data-tier="4"]')).toContainText('Survive 8:00');
+  await page.screenshot({ path: `${SHOTS}/defense-armory.png` });
+
+  // Strengthen stone once the points allow it.
+  const button = armory.locator('.armory-tier[data-tier="2"] .armory-strengthen');
+  if (await button.isDisabled()) {
+    await page.keyboard.press('Escape');
+    for (let i = 0; i < 10 && (await info(page)).points < 90; i++) await advance(page, 15);
+    await page.keyboard.press('KeyU');
+  }
+  await armory.locator('.armory-tier[data-tier="2"] .armory-strengthen').click();
+  expect((await info(page)).strength[2]).toBe(1);
+  await expect(armory.locator('.armory-tier[data-tier="2"]')).toContainText('strength 1/8');
+  await page.keyboard.press('Escape');
+  expect(errors).toEqual([]);
 });
 
 test('the round summary shows when the warren falls, and a new round starts fresh', async ({ page }) => {
@@ -139,7 +197,7 @@ test('a defense world keeps its warren and round across a reload', async ({ page
   await defenseWorld(page, 'Keep');
   await advance(page, 45);
   const d = await info(page);
-  await page.evaluate((p) => window.__game!.defenseApply({ type: 'place', x: p.x - 10, y: 0, z: p.z, material: 'stone_bricks' }), d.site);
+  await page.evaluate((p) => window.__game!.defenseApply({ type: 'place', x: p.x - 10, y: 0, z: p.z, material: 'stone' }), d.site);
   await page.evaluate(() => window.__game!.flushSave());
   await page.reload();
   await page.waitForSelector('body[data-ready="true"]');
@@ -148,6 +206,8 @@ test('a defense world keeps its warren and round across a reload', async ({ page
   expect(back.wave).toBe(d.wave);
   expect(Math.abs(back.clock - d.clock)).toBeLessThan(5);
   expect(back.blocks).toBe(d.blocks + 1);
+  expect(back.unlocked).toEqual(d.unlocked);
+  expect(back.offers).toBe(d.offers);
   await expect(page.locator('#def-strip')).toBeVisible();
 });
 

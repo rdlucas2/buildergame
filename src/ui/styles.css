@@ -284,3 +284,25 @@ body.touch.wild.defense .toasts { top: calc(140px + env(safe-area-inset-top)); }
 .tag.wild { background: rgba(74,163,255,0.2); color: #9fd0ff; }
 .tag.defense { background: rgba(232,160,64,0.22); color: #ffd39a; }
 .kind-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+
+/* Warren Defense: the Armory and perk cards. */
+.def-perk { background: rgba(240,160,48,0.45); font-weight: 600; animation: def-pulse 1.6s ease-in-out infinite; }
+@keyframes def-pulse { 50% { background: rgba(240,160,48,0.8); } }
+.armory-list { display: flex; flex-direction: column; gap: 6px; }
+.armory-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 3fr) auto; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
+.armory-row.locked { opacity: 0.75; grid-template-columns: minmax(110px, 1fr) minmax(0, 3fr); }
+.armory-name { font-weight: 600; }
+.armory-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.armory-count { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; }
+.meter { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); margin-top: 4px; overflow: hidden; }
+.meter-fill { height: 100%; background: var(--accent-2); }
+.perk-taken { display: flex; flex-direction: column; gap: 4px; }
+.perk-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 8px; }
+.perk-card { font: inherit; text-align: left; cursor: pointer; color: var(--text); background: var(--panel-2); border: 2px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; transition: transform 0.08s, background 0.12s; }
+.perk-card:hover { background: #2a3140; transform: translateY(-2px); }
+.perk-rarity { text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; font-weight: 700; }
+.perk-name { font-size: 16px; font-weight: 700; }
+@media (max-width: 560px) {
+  .armory-row, .armory-row.locked { grid-template-columns: 1fr; }
+  .armory-actions { justify-content: flex-start; }
+}

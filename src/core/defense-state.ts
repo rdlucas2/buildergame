@@ -59,6 +59,18 @@ export interface DefenseStats {
 
 export type DefenseOutcome = 'playing' | 'lost';
 
+export type PerkKind = 'damage' | 'rate' | 'range' | 'crit' | 'pierce' | 'splash' | 'multishot' | 'regen' | 'armour' | 'fertility' | 'budget' | 'bounty';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+/** A bonus offered (or taken) during a round. */
+export interface PerkCard {
+  kind: PerkKind;
+  /** For weapon perks, the weapon class it boosts, or 'all'; empty otherwise. */
+  target: string;
+  amount: number;
+  rarity: Rarity;
+}
+
 export interface DefenseState {
   /** The warren's centre. */
   site: { x: number; z: number };
@@ -82,4 +94,17 @@ export interface DefenseState {
   stats: DefenseStats;
   outcome: DefenseOutcome;
   modifiers: DefenseModifiers;
+  /** Weapons unlocked this round, the one defenders carry by default, and how many carry others. */
+  unlocked: string[];
+  mainWeapon: string;
+  loadout: Record<string, number>;
+  /** Material tiers that can be built with (0 to `tiers - 1`), and strength levels bought per tier. */
+  tiers: number;
+  strength: number[];
+  /** Perks taken, choices waiting to be made (three cards each), and how many offers were made. */
+  perks: PerkCard[];
+  offers: PerkCard[][];
+  offersMade: number;
+  /** Time milestones (every 5 minutes) reached so far. */
+  milestones: number;
 }

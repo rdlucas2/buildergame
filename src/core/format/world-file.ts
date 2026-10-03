@@ -52,6 +52,13 @@ const CreatureSchema = z.object({
 const rle = z.object({ encoding: z.literal('rle-u16-base64'), data: z.string() });
 const count = int.min(0).max(1e12);
 
+const PerkSchema = z.object({
+  kind: z.enum(['damage', 'rate', 'range', 'crit', 'pierce', 'splash', 'multishot', 'regen', 'armour', 'fertility', 'budget', 'bounty']),
+  target: z.string().max(64),
+  amount: z.number().min(-1e6).max(1e6),
+  rarity: z.enum(['common', 'uncommon', 'rare', 'epic', 'legendary']),
+});
+
 const DefenseSchema = z.object({
   site: z.object({ x: coord, z: coord }),
   base: z.object({
@@ -97,6 +104,16 @@ const DefenseSchema = z.object({
     armour: z.number().min(0).max(1000),
     fertility: z.number().min(0).max(1000),
   }),
+  // In-round progression (added after the first version-3 files, so every field has a default).
+  unlocked: z.array(z.string().min(1).max(64)).max(64).default(['slingshot']),
+  mainWeapon: z.string().min(1).max(64).default('slingshot'),
+  loadout: z.record(z.string().max(64), int.min(0).max(100_000)).default({}),
+  tiers: int.min(0).max(16).default(3),
+  strength: z.array(int.min(0).max(100)).max(16).default([]),
+  perks: z.array(PerkSchema).max(10_000).default([]),
+  offers: z.array(z.array(PerkSchema).max(16)).max(1000).default([]),
+  offersMade: count.default(0),
+  milestones: count.default(0),
 });
 
 export const WorldFileSchema = z.object({
@@ -242,6 +259,15 @@ function encodeDefense(d: DefenseState): DefenseFile {
     stats: structuredClone(d.stats),
     outcome: d.outcome,
     modifiers: { ...d.modifiers },
+    unlocked: [...d.unlocked],
+    mainWeapon: d.mainWeapon,
+    loadout: { ...d.loadout },
+    tiers: d.tiers,
+    strength: [...d.strength],
+    perks: d.perks.map((p) => ({ ...p })),
+    offers: d.offers.map((o) => o.map((p) => ({ ...p }))),
+    offersMade: d.offersMade,
+    milestones: d.milestones,
   };
 }
 
@@ -274,6 +300,15 @@ function decodeDefense(f: DefenseFile): DefenseState {
     stats: structuredClone(f.stats),
     outcome: f.outcome,
     modifiers: { ...f.modifiers },
+    unlocked: [...f.unlocked],
+    mainWeapon: f.mainWeapon,
+    loadout: { ...f.loadout },
+    tiers: f.tiers,
+    strength: [...f.strength],
+    perks: f.perks.map((p) => ({ ...p })),
+    offers: f.offers.map((o) => o.map((p) => ({ ...p }))),
+    offersMade: f.offersMade,
+    milestones: f.milestones,
   };
 }
 

@@ -56,6 +56,8 @@ export class Population {
   history: Array<[number, number, number]> = [];
   /** Picks the behaviour for a creature; game modes replace it to add their own. */
   behaviourFor: (c: Creature) => Behaviour = (c) => (c.species === 'prey' ? PREY : WOLF);
+  /** Population limits that replace the species' own (a game mode's carrying capacity). */
+  caps: Partial<Record<CreatureSpecies, number>> = {};
   /** Called when a creature dies (after its tally is counted). */
   onDeath?: (c: Creature, info: DeathInfo) => void;
   /** Path searches allowed per tick (a game mode with many attackers raises it). */
@@ -461,14 +463,19 @@ export class Population {
 
   canBreed(c: Creature): boolean {
     const def = defOf(c);
-    if (!(c.age >= def.maturity && c.cooldown <= 0 && c.satiety > 0.7 && c.hydration > 0.6 && c.health > 0.8 && this.count(c.species) < def.cap)) return false;
+    if (!(c.age >= def.maturity && c.cooldown <= 0 && c.satiety > 0.7 && c.hydration > 0.6 && c.health > 0.8 && this.count(c.species) < this.capOf(c.species))) return false;
     // Wolves raise young only while prey is plentiful, so a pack doesn't outgrow its food.
     return c.species === 'prey' || this.count('prey') >= PREY_PER_WOLF * (this.count('predator') + 1);
   }
 
+  /** The most of a species there can be (breeding stops there). */
+  capOf(species: CreatureSpecies): number {
+    return this.caps[species] ?? SPECIES[species].cap;
+  }
+
   /** Breeding slows as a species nears its cap (crowding), so populations level off smoothly. */
   breedChance(species: CreatureSpecies, boost = 1): number {
-    const room = 1 - this.count(species) / SPECIES[species].cap;
+    const room = 1 - this.count(species) / this.capOf(species);
     return room <= 0 ? 0 : BREED_CHANCE * boost * room * room;
   }
 
@@ -489,7 +496,7 @@ export class Population {
     const cx = Math.floor(c.x);
     const cz = Math.floor(c.z);
     const young: Creature[] = [];
-    for (let i = 0; i < n && this.count(c.species) < def.cap; i++) {
+    for (let i = 0; i < n && this.count(c.species) < this.capOf(c.species); i++) {
       for (let attempt = 0; attempt < 8; attempt++) {
         const x = cx + this.rng.int(-1, 1);
         const z = cz + this.rng.int(-1, 1);

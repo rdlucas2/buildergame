@@ -29,6 +29,22 @@ export interface Projectile {
   pz: number;
 }
 
+/** A hitscan shot, kept briefly so it can be drawn. */
+export interface Beam {
+  x0: number;
+  y0: number;
+  z0: number;
+  x1: number;
+  y1: number;
+  z1: number;
+  weapon: string;
+  /** Seconds left to show it. */
+  ttl: number;
+}
+
+/** How long a beam stays visible. */
+const BEAM_SECONDS = 0.12;
+
 /** Height of a rabbit's eyes above the cell it stands in (where its shots start). */
 export const EYE = 0.6;
 
@@ -38,6 +54,7 @@ export const EYE = 0.6;
  */
 export class Combat {
   projectiles: Projectile[] = [];
+  beams: Beam[] = [];
   private nextId = 1;
   /** Shots fired, for statistics. */
   fired = 0;
@@ -97,6 +114,7 @@ export class Combat {
     this.fired++;
     if (weapon.hitscan) {
       this.travel(p, p.left);
+      this.beams.push({ x0: ox, y0: oy, z0: oz, x1: p.x, y1: p.y, z1: p.z, weapon: weapon.id, ttl: BEAM_SECONDS });
       return true;
     }
     this.projectiles.push(p);
@@ -104,6 +122,10 @@ export class Combat {
   }
 
   tick(): void {
+    if (this.beams.length > 0) {
+      for (const b of this.beams) b.ttl -= TICK_SECONDS;
+      this.beams = this.beams.filter((b) => b.ttl > 0);
+    }
     if (this.projectiles.length === 0) return;
     const keep: Projectile[] = [];
     for (const p of this.projectiles) {
@@ -133,6 +155,10 @@ export class Combat {
     for (const { c, t } of hits) {
       this.strike(p, c, owner, t);
       if (p.pierce <= 0) {
+        // Stopped by this predator: end where it struck.
+        p.x += p.dir.x * t;
+        p.y += p.dir.y * t;
+        p.z += p.dir.z * t;
         p.left = 0;
         return false;
       }
