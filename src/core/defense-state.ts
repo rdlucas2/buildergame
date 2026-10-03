@@ -1,4 +1,4 @@
-import type { CreatureKind } from './world';
+import type { CreatureKind, PredatorRank } from './world';
 import type { Size3 } from './voxel-grid';
 
 /**
@@ -26,6 +26,8 @@ export interface SpawnOrder {
   angle: number;
   /** Hit-point multiplier for the group. */
   hpScale: number;
+  /** Elites and bosses (their hit points are already in `hpScale`). */
+  rank?: PredatorRank;
 }
 
 /** Bonuses carried into a round from permanent upgrades (all 0 or 1 for a fresh profile). */
@@ -119,4 +121,6 @@ export interface DefenseState {
   rerolls: number;
   /** Set once the round's rewards went to the player's profile (so a reload doesn't pay twice). */
   rewarded: boolean;
+  /** Boss waves sent so far (one at 10:00, one at 20:00). */
+  bosses: number;
 }

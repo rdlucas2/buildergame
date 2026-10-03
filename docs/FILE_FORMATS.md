@@ -151,9 +151,10 @@ still written as version 2. Creatures gain three optional fields:
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | Which animal: `rabbit`, `wolf`, `fox`, `badger`, `bear`, `tiger` or `hawk`. When missing, `prey` is a rabbit and `predator` a wolf. |
+| `kind` | Which animal: `rabbit`, `wolf`, `fox`, `badger`, `bear`, `tiger` or `hawk`. When missing, `prey` is a rabbit and `predator` a wolf. Hawks fly: their `y` is their height in the air. |
 | `role` | Rabbits in a round: `defender` or `breeder`. |
 | `maxHp` | Hit points at full `health`, when a wave scaled it up from the kind's normal value. |
+| `rank` | `elite` or `boss` for a round's tougher predators (their extra hit points are in `maxHp`). |
 
 ```json
 "defense": {
@@ -188,7 +189,8 @@ still written as version 2. Creatures gain three optional fields:
   "offersMade": 6,
   "milestones": 1,
   "rerolls": 1,
-  "rewarded": false
+  "rewarded": false,
+  "bosses": 0
 }
 ```
 
@@ -199,7 +201,7 @@ still written as version 2. Creatures gain three optional fields:
 | `base.damage` | Damage each block has taken, in tenths of a hit point, in the same layout and encoding. A block's hit points come from its material's tier, so they are not stored. |
 | `clock` | Simulation seconds the round has lasted. |
 | `wave`, `nextWaveAt` | Waves started so far, and the round time of the next one. |
-| `orders` | Predator groups still to arrive: when, which kind, how many, the direction they come from (radians, from the warren) and a hit-point multiplier. |
+| `orders` | Predator groups still to arrive: when, which kind, how many, the direction they come from (radians, from the warren), a hit-point multiplier, and an optional `rank` (`elite` or `boss`). |
 | `points`, `score` | Points left to spend, and the total ever earned. |
 | `budget`, `budgetBuys` | The block budget limit, and how many increases were bought (each costs more than the last). |
 | `allocation` | How many rabbits should be defenders. |
@@ -213,6 +215,7 @@ still written as version 2. Creatures gain three optional fields:
 | `milestones` | Five-minute milestones reached. |
 | `rerolls` | Perk offers that can still be redealt this round. |
 | `rewarded` | True once the round's Clover and achievements went to the player's profile, so a reload doesn't pay twice. |
+| `bosses` | Boss waves sent so far (one with the first wave at or after 10:00, one at 20:00). |
 
 All the fields from `unlocked` on are optional: a round saved before they existed loads with just
 the slingshot, soft to stone blocks and no perks.

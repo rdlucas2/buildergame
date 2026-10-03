@@ -65,8 +65,8 @@ export function dps(w: WeaponDef): number {
 
 /**
  * A rough worth for comparing weapons: damage per second, more for shots that pass through or burst
- * among several predators (waves come in crowds).
+ * among several predators (waves come in crowds), and for reach (defenders shoot from their posts).
  */
 export function weaponScore(w: WeaponDef): number {
-  return dps(w) * (1 + 0.4 * (w.pierce ?? 0)) * (1 + 0.5 * (w.splash ?? 0));
+  return dps(w) * (1 + 0.4 * (w.pierce ?? 0)) * (1 + 0.5 * (w.splash ?? 0)) * (w.range / 20);
 }

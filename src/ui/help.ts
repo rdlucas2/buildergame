@@ -47,6 +47,8 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
       ['Goal', 'Keep the rabbits alive: the round ends when the last one falls. Waves get tougher the longer you hold out'],
       ['Waves', 'The first comes at 0:30, then about one a minute; Call now brings the next one early for bonus points'],
       ['Predators', 'Foxes are small enough for 1-high gaps; wolves and badgers chew through the weakest wall instead'],
+      ['Later waves', 'Tigers leap 3 high (build walls 4 high), bears smash walls, hawks dive at rabbits not under a roof'],
+      ['Elites and bosses', 'Gold elites from 15:00 and a red boss at 10:00 and 20:00: tougher and worth more points'],
       ['Defenders', 'Red scarves: they man the lookout posts and shoot at predators they can see'],
       ['Breeders', 'Everyone else eats, drinks and raises young, and runs home when predators come; use − / + to set how many defend'],
       ['F', 'Fortify: build (right click) and break (left click) warren blocks inside the orange area'],

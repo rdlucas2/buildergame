@@ -244,7 +244,7 @@ describe('waves', () => {
       return foxes / all;
     };
     expect(share(180)).toBeGreaterThan(share(600));
-    const late = planWave(12, 600, new Rng(1));
+    const late = planWave(11, 600, new Rng(1));
     expect(late.orders.some((o) => o.kind === 'badger')).toBe(true);
   });
 

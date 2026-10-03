@@ -1,7 +1,7 @@
 import { LineBasicMaterial, Vector3 } from 'three';
 import { rayPlaneY } from '../core/raycast';
 import type { DefenseStats } from '../core/defense-state';
-import type { CreatureKind, CreatureSpecies, EcosystemState, Placement, RabbitRole, World } from '../core/world';
+import type { CreatureKind, CreatureSpecies, CreatureState, EcosystemState, Placement, PredatorRank, RabbitRole, World } from '../core/world';
 import { CreatureView } from '../render/creature-view';
 import { DefenseView } from '../render/defense-view';
 import { OutlineBox } from '../render/highlight';
@@ -9,7 +9,7 @@ import type { SceneHost } from '../render/scene';
 import type { VoxelMaterials } from '../render/voxel-materials';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
 import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
-import { SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
+import { KINDS, SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
 import type { Defense, DefenseAction, ActionResult } from '../sim/defense/defense';
 import { TIERS } from '../sim/defense/materials';
 import { WEAPONS } from '../sim/defense/weapons';
@@ -272,7 +272,7 @@ export class EcosystemController {
       for (const e of d.events.splice(0)) {
         if (e.kind === 'wave') {
           const parts = Object.entries(e.counts).map(([k, n]) => countOf(k, n));
-          toast(`Wave ${e.n}: ${parts.join(', ')}`, 'info', 3500);
+          toast(`Wave ${e.n}${e.name ? ` · ${e.name}` : ''}: ${parts.join(', ')}`, e.boss ? 'error' : 'info', e.name ? 5000 : 3500);
         } else if (e.kind === 'lost') {
           this.onRoundOver?.();
         } else if (e.kind === 'unlock') {
@@ -322,7 +322,8 @@ export class EcosystemController {
     const pct = (v: number) => `${Math.round(v * 100)}%`;
     const def = defOf(c);
     if (this.defense && c.species === 'predator') {
-      return `${def.name} · ${describeActivity(c)} · health ${Math.ceil(c.health * maxHpOf(c))}/${maxHpOf(c)}`;
+      const name = c.rank === 'boss' ? `${def.name} boss` : c.rank === 'elite' ? `Elite ${def.name.toLowerCase()}` : def.name;
+      return `${name} · ${describeActivity(c)} · health ${Math.ceil(c.health * maxHpOf(c))}/${maxHpOf(c)}`;
     }
     const age = c.age < def.maturity ? 'young' : `${(c.age / DAY_SECONDS).toFixed(1)} days old`;
     const role = c.role ? ` ${c.role === 'defender' ? 'defender' : 'breeder'}` : '';
@@ -350,6 +351,19 @@ export class EcosystemController {
       this.onActivity?.();
     }
     return n;
+  }
+
+  /** Brings in one predator of a kind (tests and debugging), optionally an elite or a boss. */
+  spawnPredator(kind: CreatureKind, x: number, z: number, rank?: PredatorRank): number | null {
+    const eco = this.eco;
+    if (!eco || KINDS[kind].species !== 'predator') return null;
+    const def = KINDS[kind];
+    const mult = rank === 'boss' ? 3 : rank === 'elite' ? 2.5 : 1;
+    const init: Partial<CreatureState> = { maxHp: Math.round(def.maxHp * mult), age: def.maturity * 2, satiety: 1, hydration: 1 };
+    if (rank) init.rank = rank;
+    const c = eco.population.spawnKind(kind, x, def.abilities.flier ? 10 : 0, z, init);
+    this.creatureView?.update(eco.population.creatures, 1);
+    return c.id;
   }
 
   /** A summary of the Warren Defense round (tests, debugging and bots), or null. */

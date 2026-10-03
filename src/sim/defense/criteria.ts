@@ -94,7 +94,7 @@ export function met(c: Criterion, p: Progress): boolean {
 
 const clockText = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const plural = (n: number, word: string, words = `${word}s`) => `${n} ${n === 1 ? word : words}`;
-const KIND_PLURALS: Readonly<Record<string, string>> = { fox: 'foxes', wolf: 'wolves' };
+const KIND_PLURALS: Readonly<Record<string, string>> = { fox: 'foxes', wolf: 'wolves', boss: 'bosses' };
 
 /** "Survive 3:00", "20 kills with the Slingshot", "Survive 6:00 and earn 1500 points". */
 export function describe(c: Criterion): string {

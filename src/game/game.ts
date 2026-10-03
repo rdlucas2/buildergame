@@ -10,7 +10,7 @@ import { getMaterial } from '../core/materials';
 import type { Vec3 } from '../core/math';
 import type { Rotation } from '../core/rotation';
 import { EmptyStructureError, structureBlockCount, type Structure } from '../core/structure';
-import { createWorld, placementVoxelAt, referencedStructureIds, touchWorld, type CreatureSpecies, type Placement, type World } from '../core/world';
+import { createWorld, placementVoxelAt, referencedStructureIds, touchWorld, type CreatureKind, type CreatureSpecies, type Placement, type PredatorRank, type World } from '../core/world';
 import { aabbFromPosSize } from '../core/math';
 import { rotatedSize } from '../core/rotation';
 import { buildExampleStructures, exampleDescription } from '../examples';
@@ -1169,6 +1169,7 @@ export class Game {
       ecoNearestWater: (x, z) => g.eco.nearestWater(x, z),
       ecoCreatures: () => g.eco.creatures(),
       ecoRelease: (species, x, z, count) => g.eco.release(species, x, z, count),
+      defenseSpawn: (kind, x, z, rank) => g.eco.spawnPredator(kind, x, z, rank),
       ecoReleaseAtCrosshair: (count, species = 'prey') => g.eco.releaseAtCrosshair(species, count),
       ecoSafe: (x, y, z) => g.eco.ecosystem?.safety.isSafe(x, y, z) ?? false,
       ecoHovered: () => g.eco.hovered()?.id ?? null,
@@ -1276,6 +1277,8 @@ export interface GameDebug {
   ecoHovered(): number | null;
   /** The Warren Defense round, or null in other worlds. */
   defense(): DefenseInfo | null;
+  /** Brings in one predator of a kind at (x, z), optionally an elite or a boss; returns its id. */
+  defenseSpawn(kind: CreatureKind, x: number, z: number, rank?: PredatorRank): number | null;
   /** Applies a Warren Defense action as the player would (allocate, call a wave, build...). */
   defenseApply(action: DefenseAction): ActionResult;
   fortify(on: boolean): void;

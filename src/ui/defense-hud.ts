@@ -32,7 +32,7 @@ export interface DefenseHudState {
   repairPrice: number;
 }
 
-const PLURALS: Record<string, string> = { fox: 'foxes', wolf: 'wolves' };
+const PLURALS: Record<string, string> = { fox: 'foxes', wolf: 'wolves', boss: 'bosses' };
 
 /** "1 fox", "3 wolves", "2 badgers". */
 export function countOf(kind: string, n: number): string {
@@ -136,7 +136,10 @@ export interface RoundSummary {
 /** The end of a round: how long the warren held out and what happened, with a way to go again. */
 export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => void; onCouncil?: () => void }): PanelHandle {
   const panel = openPanel('The warren has fallen', { id: 'round-summary' });
+  // Elites and bosses are counted under their kind too; they get their own mention.
+  const ranks = (['boss', 'elite'] as const).filter((r) => s.stats.killsOf[r]).map((r) => countOf(r, s.stats.killsOf[r]));
   const kills = Object.entries(s.stats.killsOf)
+    .filter(([k]) => k !== 'elite' && k !== 'boss')
     .sort((a, b) => b[1] - a[1])
     .map(([k, n]) => countOf(k, n))
     .join(', ');
@@ -151,7 +154,7 @@ export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => v
       stat('Rabbits lost', String(s.stats.rabbitsLost)),
       stat('Blocks broken', String(s.stats.blocksBroken)),
     ),
-    kills ? el('p', { class: 'muted small', id: 'round-kills' }, `Driven off: ${kills}.`) : el('span'),
+    kills ? el('p', { class: 'muted small', id: 'round-kills' }, `Driven off: ${kills}.${ranks.length ? ` Among them: ${ranks.join(', ')}.` : ''}`) : el('span'),
     s.reward
       ? el(
           'div',
