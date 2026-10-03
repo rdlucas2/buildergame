@@ -24,6 +24,20 @@ export const WORLD_FILE_EXTENSION = '.world.json';
 export const WORLD_BUNDLE_EXTENSION = '.world.zip';
 
 const int = z.number().int();
+
+/** A round's permanent-upgrade modifiers (also used by replay files). */
+export const ModifiersSchema = z.object({
+  budget: z.number().min(0).max(1e9),
+  rabbits: int.min(0).max(10_000),
+  blockHp: z.number().min(0).max(1000),
+  damage: z.number().min(0).max(1000),
+  armour: z.number().min(0).max(1000),
+  fertility: z.number().min(0).max(1000),
+  startWeapon: int.min(0).max(64).default(0),
+  rerolls: int.min(0).max(1000).default(0),
+  cards: int.min(1).max(8).default(3),
+});
+
 const coord = int.min(-1_000_000).max(1_000_000);
 const unit = z.number().min(0).max(1);
 /** More creatures than any population cap allows, so a file can't make the game do unbounded work. */
@@ -99,17 +113,7 @@ const DefenseSchema = z.object({
     firstLoss: z.number().min(-1).max(1e9).default(-1),
   }),
   outcome: z.enum(['playing', 'lost']),
-  modifiers: z.object({
-    budget: z.number().min(0).max(1e9),
-    rabbits: int.min(0).max(10_000),
-    blockHp: z.number().min(0).max(1000),
-    damage: z.number().min(0).max(1000),
-    armour: z.number().min(0).max(1000),
-    fertility: z.number().min(0).max(1000),
-    startWeapon: int.min(0).max(64).default(0),
-    rerolls: int.min(0).max(1000).default(0),
-    cards: int.min(1).max(8).default(3),
-  }),
+  modifiers: ModifiersSchema,
   // In-round progression (added after the first version-3 files, so every field has a default).
   unlocked: z.array(z.string().min(1).max(64)).max(64).default(['slingshot']),
   mainWeapon: z.string().min(1).max(64).default('slingshot'),

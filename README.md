@@ -78,6 +78,10 @@ to every material, and share what you make as files that anyone can drop into th
     flawless start, hunting each predator, veteran milestones and more) pay Clover too.
   - Progress is saved in the browser; **Export progress** in the Council saves it as a
     `.profile.json` file to back up or move to another browser.
+  - **Test bots** play Warren Defense in five styles (turtle, sharpshooter, breeder, balanced and
+    gambler), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
+    bot round saves a `.replay.json`. **Watch a replay…** in the World menu plays one back exactly
+    in the game. See [`bots/README.md`](bots/README.md).
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 
@@ -141,6 +145,8 @@ npm test           # unit tests (vitest)
 npm run e2e        # browser tests (playwright, headless chromium)
 npm run build      # production build in dist/
 npm run balance    # headless Warren Defense rounds over many seeds, per policy and upgrade profile
+npm run bots       # test bots play Warren Defense: headless or in a browser, rules or TypeSafe AI
+npm run bots:compare  # the bots' play styles side by side over several seeds
 ```
 
 The game exposes `window.__game` for automation (the end-to-end tests drive it through this API).

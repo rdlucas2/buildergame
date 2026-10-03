@@ -12,7 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "bots": "tsx bots/run.ts",
+    "bots:compare": "tsx bots/compare.ts",
+    "bots:verify": "tsx bots/verify.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",
@@ -24,6 +27,7 @@
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "vite": "^8.3.1",

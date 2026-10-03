@@ -307,3 +307,6 @@ body.touch.wild.defense .toasts { top: calc(140px + env(safe-area-inset-top)); }
   .armory-actions { justify-content: flex-start; }
 }
 .round-reward { background: rgba(61,220,132,0.08); border: 1px solid rgba(61,220,132,0.3); border-radius: 10px; padding: 10px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* A test bot playing, or a replay being watched. */
+#bot-overlay { position: fixed; left: 12px; bottom: 12px; z-index: 30; max-width: min(420px, calc(100vw - 24px)); padding: 10px 12px; border-radius: 10px; background: rgba(15, 18, 24, 0.86); border: 1px solid var(--border); color: var(--text); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; pointer-events: none; }

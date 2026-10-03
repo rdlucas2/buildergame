@@ -1,6 +1,6 @@
 import { LineBasicMaterial, Vector3 } from 'three';
 import { rayPlaneY } from '../core/raycast';
-import type { DefenseStats } from '../core/defense-state';
+import type { DefenseModifiers, DefenseStats } from '../core/defense-state';
 import type { CreatureKind, CreatureSpecies, CreatureState, EcosystemState, Placement, PredatorRank, RabbitRole, World } from '../core/world';
 import { CreatureView } from '../render/creature-view';
 import { DefenseView } from '../render/defense-view';
@@ -8,15 +8,19 @@ import { OutlineBox } from '../render/highlight';
 import type { SceneHost } from '../render/scene';
 import type { VoxelMaterials } from '../render/voxel-materials';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
-import { DAY_SECONDS, SPEEDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
+import { DAY_SECONDS, SPEEDS, TICK_SECONDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
 import { KINDS, SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
 import type { Defense, DefenseAction, ActionResult } from '../sim/defense/defense';
+import { buildOptions, expand } from '../sim/defense/advisor';
 import { TIERS } from '../sim/defense/materials';
+import { stateHash, type ReplayEntry } from '../sim/defense/replay';
+import { observeRound, type DefenseObservation } from '../sim/defense/session';
 import { WEAPONS } from '../sim/defense/weapons';
 import { Ecosystem, PACK_SIZE } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
 import { openArmory, openPerkOffer } from '../ui/armory';
+import { setBotOverlay } from '../ui/bot-overlay';
 import { countOf, DefenseHud } from '../ui/defense-hud';
 import { EcosystemHud, openNaturePanel } from '../ui/ecosystem-hud';
 import { toast } from '../ui/toast';
@@ -62,6 +66,11 @@ export class EcosystemController {
   private lastRoundSecond = -1;
   /** Warren Defense: the Fortify button was pressed. */
   onToggleFortify?: () => void;
+  /**
+   * A replay being watched: its actions are scheduled in the round, player actions are refused, and
+   * the clock stops at the tick the recording ended.
+   */
+  private replay: { ticks: number; label: string; done: boolean } | null = null;
 
   constructor(
     private readonly host: SceneHost,
@@ -120,9 +129,80 @@ export class EcosystemController {
   applyDefense(action: DefenseAction): ActionResult {
     const d = this.defense;
     if (!d) return { ok: false, reason: 'Not a Warren Defense world.' };
+    if (this.replay) return { ok: false, reason: 'Watching a replay: start a new round to play.' };
     const r = d.apply(action);
     if (r.ok) this.onActivity?.();
     return r;
+  }
+
+  // ---- bots and replays ----------------------------------------------------------------------
+
+  /** The round as a bot sees it (the same view the headless bots get), or null. */
+  observe(): DefenseObservation | null {
+    return this.eco?.defense ? observeRound(this.eco) : null;
+  }
+
+  /** Ready-made moves for the warren right now (see `buildOptions`), without their block lists. */
+  options(): Array<{ id: string; label: string; description: string; budget: number; points: number }> {
+    const d = this.defense;
+    return d ? buildOptions(d).map(({ actions: _a, ...o }) => o) : [];
+  }
+
+  /**
+   * Applies an action, or every action of a named build option. Says at which round tick, and which
+   * actions went through (what a replay has to record).
+   */
+  act(input: DefenseAction | { option: string }): ActResult {
+    const d = this.defense;
+    if (!d) return { ok: false, reason: 'Not a Warren Defense world.', tick: 0, applied: [] };
+    const tick = d.tickIndex;
+    const list = expand(d, input);
+    if (!list) return { ok: false, reason: `No option "${(input as { option: string }).option}" right now.`, tick, applied: [] };
+    const applied: DefenseAction[] = [];
+    for (const a of list) {
+      const r = this.applyDefense(a);
+      if (!r.ok) return { ...r, tick, applied };
+      applied.push(structuredClone(a));
+    }
+    return { ok: true, tick, applied };
+  }
+
+  /** A fingerprint of the simulation, to compare with a headless run of the same replay. */
+  stateHash(): string | null {
+    return this.eco ? stateHash(this.eco) : null;
+  }
+
+  /** Plays recorded actions in the current (fresh) round, up to the tick the recording ended. */
+  playReplay(actions: readonly ReplayEntry[], ticks: number, label: string): boolean {
+    const d = this.defense;
+    if (!d) return false;
+    d.schedule(actions);
+    // Someone else's round: it pays no Clover and earns no achievements.
+    d.rewarded = true;
+    this.replay = { ticks, label, done: false };
+    setBotOverlay(`▶ Replay: ${label}`);
+    return true;
+  }
+
+  /** The replay being watched: where it ends, and whether it got there. */
+  replayState(): { ticks: number; tick: number; done: boolean } | null {
+    const d = this.defense;
+    return this.replay && d ? { ticks: this.replay.ticks, tick: d.tickIndex, done: this.replay.done || d.over } : null;
+  }
+
+  /** Runs one tick unless a watched replay has reached its end (then says so, once). */
+  private step(eco: Ecosystem): boolean {
+    const r = this.replay;
+    if (r && eco.defense && eco.defense.tickIndex >= r.ticks) {
+      if (!r.done) {
+        r.done = true;
+        setBotOverlay(`■ Replay finished: ${r.label}`);
+        toast('The replay has reached the end of its recording.', 'info', 3000);
+      }
+      return false;
+    }
+    eco.tick();
+    return true;
   }
 
   /** The Armory panel: weapons, block strength and perks. */
@@ -206,6 +286,8 @@ export class EcosystemController {
     this.hoveredId = null;
     this.eco = null;
     this.worldId = null;
+    if (this.replay) setBotOverlay(null);
+    this.replay = null;
     this.hud.setVisible(false);
     document.body.classList.remove('wild');
     if (this.litBySim) {
@@ -219,7 +301,7 @@ export class EcosystemController {
     const eco = this.eco;
     if (!eco) return;
     const ticks = this.acc.consume(realDt, this.speed);
-    for (let i = 0; i < ticks; i++) eco.tick();
+    for (let i = 0; i < ticks; i++) if (!this.step(eco)) break;
     if (ticks > 0) {
       this.repaintTimer += realDt;
       if (this.repaintTimer >= REPAINT_INTERVAL) {
@@ -280,9 +362,10 @@ export class EcosystemController {
         } else if (e.kind === 'tier') {
           toast(`${TIERS[e.tier].name} blocks unlocked for Fortify.`, 'success', 4000);
         } else if (e.kind === 'offer') {
-          if (e.pending === 1) toast('A perk to choose: press K.', 'info', 3000);
+          // In a replay the bot picks its own perks.
+          if (e.pending === 1 && !this.replay) toast('A perk to choose: press K.', 'info', 3000);
         } else if (e.kind === 'milestone') {
-          toast(`${e.minutes}:00 survived! A rare perk is waiting (K).`, 'success', 4500);
+          toast(`${e.minutes}:00 survived!${this.replay ? '' : ' A rare perk is waiting (K).'}`, 'success', 4500);
         }
       }
     }
@@ -401,6 +484,7 @@ export class EcosystemController {
       perks: d.perks.length,
       offers: d.offers.length,
       repairPrice: d.repairPrice,
+      modifiers: { ...d.modifiers },
     };
   }
 
@@ -483,8 +567,10 @@ export class EcosystemController {
 
   /** Runs the simulation forward immediately (tests and debugging), then repaints. */
   advance(seconds: number): void {
-    if (!this.eco) return;
-    this.eco.advance(seconds);
+    const eco = this.eco;
+    if (!eco) return;
+    const n = Math.round(seconds / TICK_SECONDS);
+    for (let i = 0; i < n; i++) if (!this.step(eco)) break;
     this.view?.refreshAll();
   }
 
@@ -559,6 +645,12 @@ export interface EcosystemInfo {
   historyLength: number;
 }
 
+/** What `act` did: whether it worked, at which round tick, and the actions that went through. */
+export interface ActResult extends ActionResult {
+  tick: number;
+  applied: DefenseAction[];
+}
+
 export interface DefenseInfo {
   clock: number;
   wave: number;
@@ -588,6 +680,8 @@ export interface DefenseInfo {
   offers: number;
   repairPrice: number;
   fortifying: boolean;
+  /** The permanent upgrades this round started with. */
+  modifiers: DefenseModifiers;
 }
 
 export interface CreatureInfo {
