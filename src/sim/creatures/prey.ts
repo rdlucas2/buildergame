@@ -64,6 +64,8 @@ export function decidePrey(pop: Population, c: Creature, night: boolean, opts: {
   const threat = nearestThreat(pop, c);
   if (threat && !desperate) {
     c.target = threat.id;
+    // Birds strike from above: get under a roof (walls don't help).
+    if (defOf(threat).abilities.flier) return takeCover(pop, c, threat, home);
     if (home && !atHome(home, Math.floor(c.x), Math.floor(c.z))) return runHome(pop, c, threat, home);
     // Safe cells keep out predators 2 blocks tall; a smaller one (a fox) can follow, so run from it.
     const followable = defOf(threat).body.height < 2;
@@ -211,4 +213,40 @@ function routeHome(pop: Population, c: Creature, home: HomeArea, urgent: boolean
     if (y !== null && pop.route(c, { x, y, z }, urgent, HOME_NODES)) return true;
   }
   return false;
+}
+
+/** How far a rabbit looks for a roof to hide under from a bird. */
+const COVER_RADIUS = 10;
+
+/** Hides under the nearest roof (at home, if it has one) from a bird; runs if there is none. */
+function takeCover(pop: Population, c: Creature, threat: Creature, home: HomeArea | null): void {
+  const x0 = Math.floor(c.x);
+  const z0 = Math.floor(c.z);
+  if (pop.roofed(x0, c.y, z0)) {
+    c.activity = 'hide';
+    c.path = [];
+    c.wait = Math.max(c.wait, HIDE_SECONDS);
+    return;
+  }
+  if (c.activity === 'flee' && c.path.length > c.step) {
+    const goal = c.path[c.path.length - 1];
+    if (pop.roofed(goal.x, goal.y, goal.z)) return;
+  }
+  const body = defOf(c).body;
+  // Rings outwards: the nearest roofed spot a rabbit can stand in.
+  for (let r = 1; r <= COVER_RADIUS; r++)
+    for (let dz = -r; dz <= r; dz++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = x0 + dx;
+        const z = z0 + dz;
+        if (home && atHome(home, x0, z0) && !atHome(home, x, z)) continue;
+        const y = pop.nav.surfaceBelow(x, c.y + 1, z, body);
+        if (y === null || !pop.roofed(x, y, z)) continue;
+        if (pop.route(c, { x, y, z }, true)) {
+          c.activity = 'flee';
+          return;
+        }
+      }
+  runFrom(pop, c, threat, home);
 }

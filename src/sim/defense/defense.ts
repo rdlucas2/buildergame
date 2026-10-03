@@ -1,6 +1,6 @@
 import { NO_MODIFIERS, type DefenseModifiers, type DefenseOutcome, type DefenseState, type DefenseStats, type PerkCard, type SpawnOrder } from '../../core/defense-state';
 import { getMaterial } from '../../core/materials';
-import type { CreatureKind } from '../../core/world';
+import type { CreatureKind, CreatureState } from '../../core/world';
 import { TICK_SECONDS } from '../clock';
 import { Rng, hash3 } from '../rng';
 import { KINDS, PREY, atHome, decidePrey, defOf, type Behaviour, type Creature, type DeathInfo, type HomeArea } from '../creatures';
@@ -16,7 +16,8 @@ import { met, type Progress } from './criteria';
 import { TIERS, blockCost, tierOf } from './materials';
 import { RARITIES, rollOffer, totalsOf, type PerkTotals } from './perks';
 import { makeRaider } from './raider';
-import { OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
+import { BOSS_TIMES, OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
+import { HAWK_ALTITUDE, makeHawk } from './hawk';
 import { MAX_STRENGTH, REPAIR_HP_PER_POINT, TIER_UNLOCKS, WEAPON_UNLOCKS, strengthPrice } from './unlocks';
 import { DEFAULT_WEAPON, WEAPONS, WEAPON_LIST, weaponScore, type WeaponClass, type WeaponDef } from './weapons';
 
@@ -47,7 +48,7 @@ export interface ActionResult {
 }
 
 export type DefenseEvent =
-  | { kind: 'wave'; n: number; counts: Partial<Record<CreatureKind, number>> }
+  | { kind: 'wave'; n: number; counts: Partial<Record<CreatureKind, number>>; name?: string; boss?: CreatureKind }
   | { kind: 'lost'; clock: number }
   | { kind: 'unlock'; weapon: string }
   | { kind: 'tier'; tier: number }
@@ -74,6 +75,14 @@ const FIELD_REFRESH = 2;
 const FIELD_MIN_AGE = 0.5;
 const SEARCH_BUDGET = { normal: 10, urgent: 6 };
 const PERK_SALT = 0x9e4c;
+/** The blocks a bear's smash reaches around the one it breaks. */
+const SMASH_NEIGHBOURS: ReadonlyArray<[number, number, number]> = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+  [0, 1, 0],
+];
 /** A milestone comes every this many seconds survived (with a perk offer of rare cards or better). */
 export const MILESTONE_SECONDS = 300;
 
@@ -85,7 +94,7 @@ export function emptyStats(): DefenseStats {
  * The in-round progression a round starts with: the slingshot (and any weapons the starting-weapon
  * upgrade adds), soft to stone blocks, no perks, and the rerolls upgrades give.
  */
-export function emptyProgression(modifiers: DefenseModifiers = NO_MODIFIERS): Pick<DefenseState, 'unlocked' | 'mainWeapon' | 'loadout' | 'tiers' | 'strength' | 'perks' | 'offers' | 'offersMade' | 'milestones' | 'rerolls' | 'rewarded'> {
+export function emptyProgression(modifiers: DefenseModifiers = NO_MODIFIERS): Pick<DefenseState, 'unlocked' | 'mainWeapon' | 'loadout' | 'tiers' | 'strength' | 'perks' | 'offers' | 'offersMade' | 'milestones' | 'rerolls' | 'rewarded' | 'bosses'> {
   const unlocked = WEAPON_LIST.slice(0, 1 + Math.max(0, Math.min(WEAPON_LIST.length - 1, modifiers.startWeapon))).map((w) => w.id);
   return {
     unlocked,
@@ -99,6 +108,7 @@ export function emptyProgression(modifiers: DefenseModifiers = NO_MODIFIERS): Pi
     milestones: 0,
     rerolls: modifiers.rerolls,
     rewarded: false,
+    bosses: 0,
   };
 }
 
@@ -135,6 +145,7 @@ export class Defense implements DefenseContext {
   rerolls: number;
   /** Set by the game once the round's rewards went to the player's profile. */
   rewarded: boolean;
+  bosses: number;
   /** What the perks taken add up to. */
   private totals: PerkTotals;
   /** Weapons with perks and upgrades applied, by id (rebuilt when either changes). */
@@ -154,6 +165,7 @@ export class Defense implements DefenseContext {
   private readonly breeder: Behaviour;
   private readonly defender: Behaviour;
   private readonly raider: Behaviour;
+  private readonly hawk: Behaviour;
 
   constructor(
     private readonly eco: Ecosystem,
@@ -186,6 +198,7 @@ export class Defense implements DefenseContext {
     this.milestones = state.milestones;
     this.rerolls = state.rerolls;
     this.rewarded = state.rewarded;
+    this.bosses = state.bosses;
     this.totals = totalsOf(this.perks);
     this.base.hpMultiplier = this.modifiers.blockHp;
     this.base.strength = this.strength;
@@ -197,6 +210,7 @@ export class Defense implements DefenseContext {
     };
     this.defender = makeDefender(this);
     this.raider = makeRaider(this);
+    this.hawk = makeHawk(this);
     this.install();
   }
 
@@ -225,7 +239,7 @@ export class Defense implements DefenseContext {
     const { population: pop, solids, vegetation: veg } = this.eco;
     pop.searchBudget = { ...SEARCH_BUDGET };
     pop.caps = { prey: WARREN_CAPACITY + this.modifiers.rabbits };
-    pop.behaviourFor = (c) => (c.species === 'predator' ? this.raider : c.role === 'defender' ? this.defender : this.breeder);
+    pop.behaviourFor = (c) => (c.species === 'predator' ? (defOf(c).abilities.flier ? this.hawk : this.raider) : c.role === 'defender' ? this.defender : this.breeder);
     pop.onDeath = (c, info) => this.onDeath(c, info);
     solids.setBase(this.base);
     for (let z = this.base.origin.z; z < this.base.origin.z + this.base.size.z; z++)
@@ -285,13 +299,18 @@ export class Defense implements DefenseContext {
     this.wave++;
     // Each wave draws from its own stream, so a seed always brings the same waves whatever the
     // creatures did in between (rounds stay comparable across players and bots).
-    const plan = planWave(this.wave, this.clock, new Rng(hash3(this.eco.seed, WAVE_SALT, this.wave)));
+    const boss = this.bosses < BOSS_TIMES.length && this.clock >= BOSS_TIMES[this.bosses];
+    if (boss) this.bosses++;
+    const plan = planWave(this.wave, this.clock, new Rng(hash3(this.eco.seed, WAVE_SALT, this.wave)), { boss });
     this.orders.push(...plan.orders);
     this.orders.sort((a, b) => a.at - b.at);
     this.nextWaveAt = this.clock + WAVE_INTERVAL;
     const counts: Partial<Record<CreatureKind, number>> = {};
     for (const o of plan.orders) counts[o.kind] = (counts[o.kind] ?? 0) + o.count;
-    this.events.push({ kind: 'wave', n: this.wave, counts });
+    const event: DefenseEvent = { kind: 'wave', n: this.wave, counts };
+    if (plan.name) event.name = plan.name;
+    if (plan.boss) event.boss = plan.boss;
+    this.events.push(event);
     // A perk to choose from every wave after the first.
     if (this.wave >= 2) this.offerPerks(0);
   }
@@ -416,7 +435,10 @@ export class Defense implements DefenseContext {
         const x = Math.round(cx + rng.range(-3, 3));
         const z = Math.round(cz + rng.range(-3, 3));
         if (!nav.inBounds(x, z) || nav.isWater(x, z) || !nav.standable(x, 0, z, def.body)) continue;
-        pop.spawnKind(o.kind, x, 0, z, { maxHp: Math.round(def.maxHp * o.hpScale), age: def.maturity * 2, satiety: 1, hydration: 1 });
+        const init: Partial<CreatureState> = { maxHp: Math.round(def.maxHp * o.hpScale), age: def.maturity * 2, satiety: 1, hydration: 1 };
+        if (o.rank) init.rank = o.rank;
+        // Fliers come in high.
+        pop.spawnKind(o.kind, x, def.abilities.flier ? HAWK_ALTITUDE : 0, z, init);
         made++;
       }
     }
@@ -462,7 +484,10 @@ export class Defense implements DefenseContext {
       this.stats.kills++;
       if (info.weapon) this.stats.killsWith[info.weapon] = (this.stats.killsWith[info.weapon] ?? 0) + 1;
       this.stats.killsOf[kind] = (this.stats.killsOf[kind] ?? 0) + 1;
-      const earned = Math.round(KINDS[kind].points * (1 + this.clock / 600) * this.totals.bounty);
+      // Elites and bosses count as kinds of their own too (for achievements), and pay more.
+      if (c.rank) this.stats.killsOf[c.rank] = (this.stats.killsOf[c.rank] ?? 0) + 1;
+      const bonus = c.rank === 'boss' ? 10 : c.rank === 'elite' ? 3 : 1;
+      const earned = Math.round(KINDS[kind].points * (1 + this.clock / 600) * this.totals.bounty * bonus);
       this.points += earned;
       this.score += earned;
       return;
@@ -729,8 +754,12 @@ export class Defense implements DefenseContext {
     return field;
   }
 
-  chew(_c: Creature, x: number, y: number, z: number, amount: number): void {
+  chew(c: Creature, x: number, y: number, z: number, amount: number): void {
     if (this.base.damage(x, y, z, amount) === 'broken') this.stats.blocksBroken++;
+    // Bears smash: the blocks beside the one they break crack too.
+    const smash = defOf(c).abilities.smash ?? 0;
+    if (smash <= 0) return;
+    for (const [dx, dy, dz] of SMASH_NEIGHBOURS) if (this.base.damage(x + dx, y + dy, z + dz, amount * smash) === 'broken') this.stats.blocksBroken++;
   }
 
   biteMult(): number {
@@ -766,6 +795,7 @@ export class Defense implements DefenseContext {
       milestones: this.milestones,
       rerolls: this.rerolls,
       rewarded: this.rewarded,
+      bosses: this.bosses,
     };
   }
 }

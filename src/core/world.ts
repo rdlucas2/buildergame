@@ -55,6 +55,9 @@ export const CREATURE_KINDS: readonly CreatureKind[] = ['rabbit', 'wolf', 'fox',
 /** What a rabbit does in a Warren Defense world. */
 export type RabbitRole = 'breeder' | 'defender';
 
+/** Tougher-than-usual wave predators: elites from 15:00, and a boss at 10:00 and 20:00. */
+export type PredatorRank = 'elite' | 'boss';
+
 /** The saved state of one living creature (behaviour and paths are recomputed on load). */
 export interface CreatureState {
   id: number;
@@ -65,6 +68,8 @@ export interface CreatureState {
   role?: RabbitRole;
   /** Hit points at full health when they differ from the kind's (wave predators grow tougher). */
   maxHp?: number;
+  /** Warren Defense elites and bosses. */
+  rank?: PredatorRank;
   x: number;
   y: number;
   z: number;

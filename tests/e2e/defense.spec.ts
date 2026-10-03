@@ -251,6 +251,30 @@ test('a defense world keeps its warren and round across a reload', async ({ page
   await expect(page.locator('#def-strip')).toBeVisible();
 });
 
+test('bears, tigers, hawks, elites and bosses look the part', async ({ page }) => {
+  const errors = await boot(page);
+  await defenseWorld(page, 'Menagerie');
+  const d = await info(page);
+  const at = { x: d.site.x, z: d.site.z + 14 };
+  await page.evaluate(
+    ({ x, z }) => {
+      const g = window.__game!;
+      g.defenseSpawn('bear', x - 6, z, undefined);
+      g.defenseSpawn('tiger', x - 2, z, undefined);
+      g.defenseSpawn('wolf', x + 2, z, 'elite');
+      g.defenseSpawn('bear', x + 7, z + 1, 'boss');
+      g.defenseSpawn('hawk', x, z - 4, undefined);
+    },
+    at,
+  );
+  await page.evaluate((p) => window.__game!.setPose({ position: [p.x, 6, p.z + 10], yaw: 0, pitch: -0.25 }), at);
+  await frames(page, 4);
+  const now = await info(page);
+  expect(now.predators).toBe(5);
+  await page.screenshot({ path: `${SHOTS}/defense-predators.png` });
+  expect(errors).toEqual([]);
+});
+
 test.describe('touch', () => {
   test.use({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
 

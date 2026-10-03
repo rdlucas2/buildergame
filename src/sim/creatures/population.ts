@@ -22,6 +22,8 @@ export interface SearchBudget {
 }
 const DEFAULT_BUDGET: SearchBudget = { normal: 6, urgent: 4 };
 export const PATH_NODES = 1500;
+/** How far up `roofed` looks for a block overhead (above any warren). */
+const ROOF_SEARCH = 24;
 const HISTORY_EVERY = 10;
 const HISTORY_MAX = 1000;
 /** Chance per decision (about every 0.5 s) that a ready adult with a mate nearby breeds. */
@@ -173,6 +175,7 @@ export class Population {
         if (c.kind) s.kind = c.kind;
         if (c.role) s.role = c.role;
         if (c.maxHp !== undefined) s.maxHp = r(c.maxHp);
+        if (c.rank) s.rank = c.rank;
         return s;
       });
   }
@@ -587,10 +590,21 @@ export class Population {
     return inGround(size, x, z) && this.veg.cover[cellIndex(size, x, z)] > 0;
   }
 
+  /** Is there a block anywhere over the cell (x, y, z)? Fliers can't reach what is under a roof. */
+  roofed(x: number, y: number, z: number): boolean {
+    for (let h = y + 1; h < y + ROOF_SEARCH; h++) if (this.nav.solids.solid(x, h, z)) return true;
+    return false;
+  }
+
   /** Moves a creature out of any block that now occupies its cell, and forgets its route. */
   private unstick(c: Creature): void {
     c.path = [];
     c.step = 0;
+    // Fliers don't stand anywhere: one inside a new block just rises out of it.
+    if (defOf(c).abilities.flier) {
+      while (this.nav.solids.solid(Math.floor(c.x), c.y, Math.floor(c.z))) c.y++;
+      return;
+    }
     if (c.activity !== 'rest' && c.activity !== 'graze' && c.activity !== 'drink' && c.activity !== 'eat') c.activity = 'idle';
     const body = defOf(c).body;
     const x = Math.floor(c.x);

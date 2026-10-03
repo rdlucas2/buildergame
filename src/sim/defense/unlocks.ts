@@ -12,7 +12,7 @@ export const WEAPON_UNLOCKS: Readonly<Record<string, Criterion | null>> = {
   musket: all(time(360), points(1500)),
   rifle: any(time(510), killsWith('musket', 30)),
   shotgun: any(time(540), killsOf('fox', 60)),
-  cannon: any(time(660), killsOf('badger', 12)),
+  cannon: any(time(660), killsOf('badger', 12), killsOf('bear', 3)),
   laser: any(time(840), all(points(9000), killsWith('rifle', 60))),
   plasma: any(time(1020), killsWith('laser', 60)),
 };

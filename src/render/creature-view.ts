@@ -83,6 +83,52 @@ function badgerGeometry(): BufferGeometry {
   return modelGeometry(b, 'Badger', 0.09);
 }
 
+/** A big, heavy bear with a shoulder hump; white fur is tinted per instance. */
+function bearGeometry(): BufferGeometry {
+  const b = new StructureBuilder({ x: 8, y: 15, z: 18 });
+  const fur = 'white';
+  for (const x of [0, 6]) for (const z of [2, 10]) b.fill(x, 0, z, x + 1, 4, z + 1, fur);
+  b.fill(0, 5, 1, 7, 11, 12, fur);
+  b.fill(1, 12, 8, 6, 12, 11, fur);
+  b.fill(1, 7, 13, 6, 12, 15, fur);
+  b.fill(2, 7, 16, 5, 9, 17, 'snow');
+  b.fill(3, 9, 17, 4, 9, 17, 'black');
+  b.set(2, 11, 15, 'black').set(5, 11, 15, 'black');
+  b.fill(1, 13, 13, 2, 14, 13, fur).fill(5, 13, 13, 6, 14, 13, fur);
+  b.fill(3, 8, 0, 4, 9, 0, fur);
+  return modelGeometry(b, 'Bear', 0.1);
+}
+
+/** A long orange tiger with black stripes, a white belly and muzzle. */
+function tigerGeometry(): BufferGeometry {
+  const b = new StructureBuilder({ x: 6, y: 13, z: 19 });
+  const fur = 'orange';
+  for (const x of [0, 4]) for (const z of [2, 11]) b.fill(x, 0, z, x + 1, 4, z + 1, fur);
+  b.fill(0, 5, 2, 5, 9, 13, fur);
+  b.fill(1, 5, 4, 4, 5, 11, 'white');
+  for (const z of [3, 5, 7, 9, 11]) b.fill(0, 7, z, 0, 9, z, 'black').fill(5, 7, z, 5, 9, z, 'black').fill(1, 9, z, 4, 9, z, 'black');
+  b.fill(1, 8, 14, 4, 11, 16, fur);
+  b.fill(2, 8, 17, 3, 9, 17, 'white');
+  b.fill(2, 9, 18, 3, 9, 18, 'black');
+  b.set(1, 10, 16, 'yellow').set(4, 10, 16, 'yellow');
+  b.set(1, 12, 15, fur).set(4, 12, 15, fur);
+  b.fill(2, 8, 0, 3, 8, 1, fur).set(2, 8, 0, 'black');
+  return modelGeometry(b, 'Tiger', 0.09);
+}
+
+/** A hawk with its wings spread: brown back and wings, white head, yellow beak. */
+function hawkGeometry(): BufferGeometry {
+  const b = new StructureBuilder({ x: 13, y: 5, z: 9 });
+  b.fill(5, 1, 1, 7, 3, 6, 'brown');
+  b.fill(5, 2, 7, 7, 4, 8, 'white');
+  b.set(6, 3, 8, 'yellow');
+  b.fill(0, 3, 2, 4, 3, 5, 'brown').fill(8, 3, 2, 12, 3, 5, 'brown');
+  b.fill(0, 3, 2, 0, 3, 3, 'black').fill(12, 3, 2, 12, 3, 3, 'black');
+  b.fill(5, 2, 0, 7, 2, 0, 'brown');
+  b.fill(5, 0, 3, 5, 0, 3, 'yellow').fill(7, 0, 3, 7, 0, 3, 'yellow');
+  return modelGeometry(b, 'Hawk', 0.09);
+}
+
 /** Greedy-meshes a model built in voxels, centred on x and z, standing on y = 0, scaled to cells. */
 function modelGeometry(b: StructureBuilder, name: string, scale: number): BufferGeometry {
   const s = b.build({ id: `creature-${name.toLowerCase()}`, name });
@@ -99,12 +145,24 @@ const COATS: Record<CreatureKind, Color[]> = {
   fox: ['#ffffff', '#f2d6c0', '#e6c2a0'].map((c) => new Color(c)),
   badger: [new Color('#ffffff')],
   bear: ['#6b4a2b', '#4a3420', '#3a2a1c'].map((c) => new Color(c)),
-  tiger: [new Color('#e08a2c')],
-  hawk: [new Color('#8a6a48')],
+  tiger: [new Color('#ffffff'), new Color('#f0e0c8')],
+  hawk: [new Color('#ffffff'), new Color('#d8c8b0')],
 };
 
+/** Elites shine gold and bosses red, and both are bigger. */
+const RANK_TINT = { elite: new Color('#f2c84b'), boss: new Color('#e0402a') };
+const RANK_SIZE = { elite: 1.2, boss: 1.6 };
+
 /** Models per kind; kinds without their own model yet borrow the wolf's. */
-const MODELS: Partial<Record<CreatureKind, () => BufferGeometry>> = { rabbit: rabbitGeometry, wolf: wolfGeometry, fox: foxGeometry, badger: badgerGeometry };
+const MODELS: Partial<Record<CreatureKind, () => BufferGeometry>> = {
+  rabbit: rabbitGeometry,
+  wolf: wolfGeometry,
+  fox: foxGeometry,
+  badger: badgerGeometry,
+  bear: bearGeometry,
+  tiger: tigerGeometry,
+  hawk: hawkGeometry,
+};
 
 interface KindMesh {
   mesh: InstancedMesh;
@@ -223,6 +281,7 @@ export class CreatureView {
         this.place(c, alpha);
         km.mesh.setMatrixAt(i, this.tmp.matrix);
         this.color.copy(coats[hash3(c.id, 3, 5) % coats.length]);
+        if (c.rank) this.color.lerp(RANK_TINT[c.rank], 0.45);
         if (c.deadFor >= 0) this.color.multiplyScalar(0.7);
         km.mesh.setColorAt(i, this.color);
         i++;
@@ -258,7 +317,7 @@ export class CreatureView {
     let i = 0;
     for (const c of wounded) {
       const x = c.px + (c.x - c.px) * alpha;
-      const y = c.py + (c.y - c.py) * alpha + BAR_HEIGHT[kindOf(c)];
+      const y = c.py + (c.y - c.py) * alpha + BAR_HEIGHT[kindOf(c)] * (c.rank ? RANK_SIZE[c.rank] : 1);
       const z = c.pz + (c.z - c.pz) * alpha;
       const width = c.species === 'predator' ? Math.min(1.4, 0.5 + maxHpOf(c) / 150) : 0.5;
       const t = this.tmp;
@@ -304,7 +363,7 @@ export class CreatureView {
       y += Math.abs(Math.sin(c.age * 14)) * 0.08;
     }
     t.position.set(x, y + 0.001, z);
-    t.scale.setScalar(young);
+    t.scale.setScalar(young * (c.rank ? RANK_SIZE[c.rank] : 1));
     t.updateMatrix();
   }
 

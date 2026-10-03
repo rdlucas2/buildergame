@@ -1,6 +1,7 @@
 import type { SpawnOrder } from '../../core/defense-state';
 import type { CreatureKind } from '../../core/world';
-import { KINDS } from '../creatures/species';
+import { KINDS, defOf } from '../creatures/species';
+import type { Creature } from '../creatures/types';
 import type { Rng } from '../rng';
 
 /** Seconds of quiet before the first wave: time to look around and fortify. */
@@ -36,7 +37,40 @@ export const SCHEDULE: Partial<Record<CreatureKind, Schedule>> = {
   fox: { from: 0, ramp: 1, fadeFrom: 360, floor: 0.25 },
   wolf: { from: 120, ramp: 120, fadeFrom: 900, floor: 0.5 },
   badger: { from: 240, ramp: 150 },
+  tiger: { from: 480, ramp: 180 },
+  bear: { from: 660, ramp: 240 },
+  hawk: { from: 720, ramp: 150 },
 };
+
+/** Every sixth wave is themed, in turn: one kind only, and more of it than usual. */
+export const THEME_EVERY = 6;
+export const THEMES: ReadonlyArray<{ name: string; kind: CreatureKind; budget: number }> = [
+  { name: 'Fox Swarm', kind: 'fox', budget: 1.5 },
+  { name: 'Tiger Hunt', kind: 'tiger', budget: 1.2 },
+  { name: 'Bear Siege', kind: 'bear', budget: 1.2 },
+  { name: 'Hawk Raid', kind: 'hawk', budget: 1.2 },
+];
+
+/** Round times of the boss waves: the first wave at or after each brings one huge predator. */
+export const BOSS_TIMES: readonly number[] = [600, 1200];
+/** Hit-point multipliers for bosses and elites. */
+export const BOSS_HP = 3;
+export const ELITE_HP = 2.5;
+/**
+ * How much harder than usual a wave predator bites and breaks blocks: with the square root of its
+ * extra hit points from the time it came, though not from being an elite or a boss (those are
+ * tanks, a little fiercer, not one-bite killers).
+ */
+export function toughness(c: Pick<Creature, 'kind' | 'species' | 'maxHp' | 'rank'>): number {
+  const def = defOf(c);
+  const rank = c.rank === 'boss' ? BOSS_HP : c.rank === 'elite' ? ELITE_HP : 1;
+  const fierce = c.rank === 'boss' ? 1.6 : c.rank === 'elite' ? 1.3 : 1;
+  return Math.sqrt(Math.max(1, (c.maxHp ?? def.maxHp) / def.maxHp / rank)) * fierce;
+}
+
+/** Elites appear from here, in more and more groups (up to `ELITE_MAX` of them). */
+export const ELITE_FROM = 900;
+const ELITE_MAX = 0.4;
 
 /** Weight of each kind at round time `t` (seconds). */
 export function kindWeights(t: number, schedule = SCHEDULE): Partial<Record<CreatureKind, number>> {
@@ -66,7 +100,7 @@ export function overtime(t: number, what: 'hp' | 'size' = 'hp'): number {
  * fast for the first ten minutes or so, then fall behind, and only an upgraded warren lasts to 20.
  */
 export const WAVE_SIZE = { base: 4, perMinute: 2.5, power: 1.25 };
-export const HP_GROWTH = 1.29;
+export const HP_GROWTH = 1.27;
 
 /** Threat points a wave at round time `t` may spend on predators (a fox costs 1). */
 export function threatBudget(t: number): number {
@@ -91,6 +125,16 @@ export interface WavePlan {
   orders: SpawnOrder[];
   /** Total threat points in the wave. */
   threat: number;
+  /** Themed waves and boss waves have a name. */
+  name?: string;
+  /** The boss's kind, on a boss wave. */
+  boss?: CreatureKind;
+}
+
+export interface WaveOptions {
+  schedule?: Partial<Record<CreatureKind, Schedule>>;
+  /** Bring a boss with this wave. */
+  boss?: boolean;
 }
 
 /**
@@ -99,10 +143,20 @@ export interface WavePlan {
  * few seconds. Difficulty follows the time, so calling a wave early brings it before it is at its
  * strongest.
  */
-export function planWave(n: number, at: number, rng: Rng, schedule = SCHEDULE): WavePlan {
-  const weights = kindWeights(at, schedule);
-  const kinds = Object.keys(weights) as CreatureKind[];
+export function planWave(n: number, at: number, rng: Rng, opts: WaveOptions = {}): WavePlan {
+  let weights = kindWeights(at, opts.schedule ?? SCHEDULE);
   let budget = threatBudget(at);
+  let name: string | undefined;
+  if (n % THEME_EVERY === 0) {
+    const theme = THEMES[(n / THEME_EVERY - 1) % THEMES.length];
+    // A theme waits until its kind has started to come (until then the wave is an ordinary one).
+    if (weights[theme.kind]) {
+      weights = { [theme.kind]: 1 };
+      budget *= theme.budget;
+      name = theme.name;
+    }
+  }
+  const kinds = Object.keys(weights) as CreatureKind[];
   const counts = new Map<CreatureKind, number>();
   let threat = 0;
   for (let guard = 0; guard < 500 && kinds.length > 0; guard++) {
@@ -125,6 +179,7 @@ export function planWave(n: number, at: number, rng: Rng, schedule = SCHEDULE): 
   const directions = Math.min(3, 1 + Math.floor(n / 6));
   const angles = Array.from({ length: directions }, () => rng.range(0, Math.PI * 2));
   const scale = hpScale(at);
+  const eliteChance = at < ELITE_FROM ? 0 : Math.min(ELITE_MAX, (at - ELITE_FROM) / 1500);
   const orders: SpawnOrder[] = [];
   let g = 0;
   for (const [kind, count] of [...counts.entries()].sort((a, b) => KINDS[a[0]].threat - KINDS[b[0]].threat)) {
@@ -133,10 +188,24 @@ export function planWave(n: number, at: number, rng: Rng, schedule = SCHEDULE): 
     for (let p = 0; p < parts; p++) {
       const share = Math.floor(count / parts) + (p < count % parts ? 1 : 0);
       if (share === 0) continue;
-      orders.push({ at: at + rng.range(0, SPREAD_SECONDS), kind, count: share, angle: angles[(g + p) % directions] + rng.range(-0.3, 0.3), hpScale: scale });
+      const elite = eliteChance > 0 && rng.next() < eliteChance;
+      const order: SpawnOrder = { at: at + rng.range(0, SPREAD_SECONDS), kind, count: share, angle: angles[(g + p) % directions] + rng.range(-0.3, 0.3), hpScale: elite ? scale * ELITE_HP : scale };
+      if (elite) order.rank = 'elite';
+      orders.push(order);
     }
     g++;
   }
+  let boss: CreatureKind | undefined;
+  if (opts.boss) {
+    // The strongest kind about by now, alone and huge, a little after the rest.
+    boss = (Object.keys(kindWeights(at)) as CreatureKind[]).sort((a, b) => KINDS[b].threat - KINDS[a].threat)[0] ?? 'wolf';
+    orders.push({ at: at + SPREAD_SECONDS, kind: boss, count: 1, angle: angles[0], hpScale: scale * BOSS_HP, rank: 'boss' });
+    threat += KINDS[boss].threat * BOSS_HP;
+    name = `${KINDS[boss].name} boss${name ? ` and ${name}` : ''}`;
+  }
   orders.sort((a, b) => a.at - b.at);
-  return { n, at, orders, threat };
+  const plan: WavePlan = { n, at, orders, threat };
+  if (name) plan.name = name;
+  if (boss) plan.boss = boss;
+  return plan;
 }

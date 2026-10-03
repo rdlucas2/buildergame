@@ -6,6 +6,7 @@ import type { DefenseModifiers } from '../src/core/defense-state';
 import { DefenseSession, type DefenseObservation } from '../src/sim/defense/session';
 import type { DefenseAction } from '../src/sim/defense/defense';
 import { WEAPONS } from '../src/sim/defense/weapons';
+import { blockCost } from '../src/sim/defense/materials';
 import { levelsAt, modifiersFor } from '../src/sim/defense/council';
 
 type Policy = (o: DefenseObservation, s: DefenseSession) => DefenseAction[];
@@ -40,6 +41,32 @@ function lookoutSpots(s: DefenseSession): Array<{ x: number; y: number; z: numbe
   return out;
 }
 
+/**
+ * Wall-top cells of the warren's outer ring that are only 3 high (y = 3, over a wall block): a
+ * fourth course there keeps tigers, which leap 3, from jumping in. Lookouts and gaps are left be.
+ */
+function lowWallTops(s: DefenseSession): Array<{ x: number; y: number; z: number }> {
+  const base = s.defense.base;
+  const f = base.footprint();
+  if (!f) return [];
+  const out: Array<{ x: number; y: number; z: number }> = [];
+  for (let z = f.z0; z <= f.z1; z++)
+    for (let x = f.x0; x <= f.x1; x++) {
+      const edge = x === f.x0 || x === f.x1 || z === f.z0 || z === f.z1;
+      if (edge && base.solidAt(x, 2, z) && !base.solidAt(x, 3, z)) out.push({ x, y: 3, z });
+    }
+  return out;
+}
+
+/** A 5×5 roof one block up in the middle of the warren: a nursery hawks can't dive into. */
+function nurseryRoof(s: DefenseSession): Array<{ x: number; y: number; z: number }> {
+  const { site, base } = s.defense;
+  const out: Array<{ x: number; y: number; z: number }> = [];
+  for (let dz = -2; dz <= 2; dz++)
+    for (let dx = -2; dx <= 2; dx++) if (!base.solidAt(site.x + dx, 1, site.z + dz)) out.push({ x: site.x + dx, y: 1, z: site.z + dz });
+  return out;
+}
+
 /** Simple scripted players, from doing nothing to sensible housekeeping. */
 const POLICIES: Record<string, Policy> = {
   /** A control: nobody defends, so this shows what the defenders are worth. */
@@ -55,10 +82,22 @@ const POLICIES: Record<string, Policy> = {
   fortify: (o, s) => {
     const actions = steady(o, bestPerk(o));
     if (o.clock === 0) for (const p of lookoutSpots(s)) actions.push({ type: 'place', ...p, material: 'lookout' });
+    let free = o.budget - o.cost;
+    // Before tigers (8:00) and hawks (12:00): a fourth course on the walls, and a roofed nursery.
+    if (o.clock >= 300 && free >= 40) {
+      const n = Math.floor((free - 20) / 3);
+      for (const p of lowWallTops(s).slice(0, n)) actions.push({ type: 'place', ...p, material: 'cobblestone' });
+      free -= 3 * Math.min(n, lowWallTops(s).length);
+    }
+    if (o.clock >= 540 && free >= 50) for (const p of nurseryRoof(s)) actions.push({ type: 'place', ...p, material: 'planks' });
     const best = o.tiers >= 5 ? 'iron' : o.tiers >= 4 ? 'stone_bricks' : 'cobblestone';
     for (const p of lintels(s)) {
       const m = s.defense.base.materialAt(p.x, p.y, p.z);
       if (m === best) continue;
+      // Swap a lintel only when the new block is affordable: never leave a doorway open.
+      const extra = blockCost(best) - (m ? blockCost(m) : 0);
+      if (extra > free) continue;
+      free -= extra;
       if (m) actions.push({ type: 'remove', ...p });
       actions.push({ type: 'place', ...p, material: best });
     }
@@ -117,6 +156,7 @@ const PROFILES: Record<string, Partial<DefenseModifiers>> = {
 
 const seeds = Number(arg('seeds', '8'));
 const profiles = arg('profile', 'fresh').split(',');
+const why = process.argv.includes('--why');
 const maxSeconds = Number(arg('max', '1800'));
 const which = arg('policy', 'all');
 const names = which === 'all' ? Object.keys(POLICIES) : which.split(',');
@@ -134,9 +174,22 @@ for (const profile of profiles) for (const name of names) {
   if (!policy) throw new Error(`Unknown policy ${name}; try ${Object.keys(POLICIES).join(', ')}`);
   const times: number[] = [];
   const rows: string[] = [];
+  const killers = new Map<string, number>();
   const started = Date.now();
   for (let seed = 1; seed <= seeds; seed++) {
     const s = DefenseSession.create({ seed, modifiers });
+    if (why) {
+      // Tally what kills the rabbits (with `--why`): which kind, elite or boss, in which minute.
+      const pop = s.eco.population;
+      const prev = pop.onDeath;
+      pop.onDeath = (c, info) => {
+        if (c.species === 'prey' && info.killer) {
+          const k = `${info.killer.rank ? `${info.killer.rank} ` : ''}${info.killer.kind ?? 'wolf'} @${Math.floor(s.clock / 60)}m`;
+          killers.set(k, (killers.get(k) ?? 0) + 1);
+        }
+        prev?.(c, info);
+      };
+    }
     while (!s.over && s.clock < maxSeconds) {
       for (const a of policy(s.observe(), s)) s.apply(a);
       s.advance(10);
@@ -147,4 +200,5 @@ for (const profile of profiles) for (const name of names) {
   }
   console.log(`\n${profile} ${name}: median ${fmt(median(times))}, range ${fmt(Math.min(...times))}–${fmt(Math.max(...times))} over ${seeds} seeds (${((Date.now() - started) / 1000).toFixed(1)} s)`);
   for (const r of rows) console.log(r);
+  if (why) console.log(`  rabbits killed by: ${[...killers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `${k} ${n}`).join(', ')}`);
 }

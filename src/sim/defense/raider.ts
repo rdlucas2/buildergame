@@ -1,5 +1,6 @@
 import { defOf, type Behaviour, type Creature, type Population } from '../creatures';
 import type { DefenseContext } from './context';
+import { toughness } from './waves';
 
 /** How close a predator must be to bite. */
 const BITE_REACH = 1.1;
@@ -13,6 +14,8 @@ const CHASE_NODES = 200;
 const FIELD_STEPS = 10;
 /** Seconds a planned route is kept before it is planned again. */
 const REPLAN = 2;
+/** Pouncers (tigers) sprint at their prey from this close. */
+const POUNCE_RANGE = 6;
 /** A predator starts breaking a block from this close. */
 const CHEW_REACH = 1.3;
 
@@ -44,7 +47,7 @@ function decideRaider(ctx: DefenseContext, pop: Population, c: Creature): void {
     c.path = [];
     return;
   }
-  const planning = c.activity === 'raid' || c.activity === 'breach';
+  const planning = c.activity === 'raid' || c.activity === 'breach' || c.activity === 'pounce';
   if (planning && c.path.length > c.step && c.wait > 0) return;
   if (d > APPROACH) {
     // Close the distance across open ground first; plan the way in once near.
@@ -103,20 +106,17 @@ function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number
     }
     if (c.activity === 'breach') c.activity = 'raid';
   }
-  if (c.path.length > c.step) pop.follow(c, dt, 1);
-  // Snap at prey that wanders into reach.
+  // Snap at prey that wanders into reach; pouncers sprint the last few cells to it.
   const prey = pop.get(c.target);
+  const close = prey && prey.deadFor < 0 && Math.hypot(prey.x - c.x, prey.z - c.z) <= POUNCE_RANGE;
+  const pounce = close ? (def.abilities.pounce ?? 1) : 1;
+  if (pounce > 1 && c.activity === 'raid') c.activity = 'pounce';
+  if (c.path.length > c.step) pop.follow(c, dt, pounce);
   if (prey && prey.deadFor < 0 && Math.abs(prey.y - c.y) <= 1 && Math.hypot(prey.x - c.x, prey.z - c.z) <= BITE_REACH) {
     c.activity = 'bite';
     c.path = [];
   }
   return true;
-}
-
-/** Tougher (later) predators bite and break blocks harder, though less than their extra hit points. */
-function toughness(c: Creature): number {
-  const def = defOf(c);
-  return Math.sqrt((c.maxHp ?? def.maxHp) / def.maxHp);
 }
 
 /** Plans a walk to a ground cell near (x, z). */

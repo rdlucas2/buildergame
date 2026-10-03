@@ -47,6 +47,7 @@ const CreatureSchema = z.object({
   kind: KindSchema.optional(),
   role: z.enum(['breeder', 'defender']).optional(),
   maxHp: z.number().min(0).max(1e9).optional(),
+  rank: z.enum(['elite', 'boss']).optional(),
 });
 
 const rle = z.object({ encoding: z.literal('rle-u16-base64'), data: z.string() });
@@ -79,6 +80,7 @@ const DefenseSchema = z.object({
         count: int.min(0).max(1000),
         angle: z.number().min(-1000).max(1000),
         hpScale: z.number().min(0).max(1e6),
+        rank: z.enum(['elite', 'boss']).optional(),
       }),
     )
     .max(5000),
@@ -120,6 +122,7 @@ const DefenseSchema = z.object({
   milestones: count.default(0),
   rerolls: count.default(0),
   rewarded: z.boolean().default(false),
+  bosses: count.default(0),
 });
 
 export const WorldFileSchema = z.object({
@@ -276,6 +279,7 @@ function encodeDefense(d: DefenseState): DefenseFile {
     milestones: d.milestones,
     rerolls: d.rerolls,
     rewarded: d.rewarded,
+    bosses: d.bosses,
   };
 }
 
@@ -319,6 +323,7 @@ function decodeDefense(f: DefenseFile): DefenseState {
     milestones: f.milestones,
     rerolls: f.rerolls,
     rewarded: f.rewarded,
+    bosses: f.bosses,
   };
 }
 

@@ -10,6 +10,10 @@ export interface Abilities {
   flier?: boolean;
   /** Harder to spot: defenders and rabbits notice it this much closer (0–1 of their range). */
   stealth?: number;
+  /** Sprints at this multiple of its speed over the last few cells to its prey. */
+  pounce?: number;
+  /** Breaking a block also cracks the blocks beside it, by this share of the damage. */
+  smash?: number;
 }
 
 export interface KindDef {
@@ -103,9 +107,12 @@ export const KINDS: Record<CreatureKind, KindDef> = {
   wolf: { ...PREDATOR_BASE, kind: 'wolf', name: 'Wolf', body: PREDATOR_BODY, speed: 2.8, maxHp: 30, bite: 6, blockDamage: 6, threat: 3, points: 30, box: [0.5, 1.3] },
   fox: { ...PREDATOR_BASE, kind: 'fox', name: 'Fox', body: { height: 1, climb: 1, drop: 3 }, speed: 3.3, maxHp: 10, bite: 4, blockDamage: 3, threat: 1, points: 10, box: [0.4, 0.8] },
   badger: { ...PREDATOR_BASE, kind: 'badger', name: 'Badger', body: { height: 2, climb: 1, drop: 2 }, speed: 2.0, maxHp: 50, bite: 6, blockDamage: 24, threat: 4, points: 40, box: [0.5, 0.8] },
-  bear: { ...PREDATOR_BASE, kind: 'bear', name: 'Bear', body: PREDATOR_BODY, speed: 2.0, maxHp: 220, bite: 18, blockDamage: 40, threat: 14, points: 150, box: [0.6, 1.6] },
-  tiger: { ...PREDATOR_BASE, kind: 'tiger', name: 'Tiger', body: { height: 2, climb: 3, drop: 4 }, speed: 3.6, maxHp: 90, bite: 14, blockDamage: 10, threat: 9, points: 90, box: [0.5, 1.3], abilities: { stealth: 0.5 } },
-  hawk: { ...PREDATOR_BASE, kind: 'hawk', name: 'Hawk', body: PREY_BODY, speed: 5, maxHp: 25, bite: 6, blockDamage: 0, threat: 5, points: 50, box: [0.5, 0.6], abilities: { flier: true } },
+  // A slow tank: lots of hit points, and it smashes through walls, cracking the blocks beside.
+  bear: { ...PREDATOR_BASE, kind: 'bear', name: 'Bear', body: PREDATOR_BODY, speed: 2.0, maxHp: 220, bite: 18, blockDamage: 40, threat: 20, points: 150, box: [0.6, 1.6], abilities: { smash: 0.35 } },
+  // Leaps 3 blocks (walls must be 4 high to stop it), is hard to spot, and pounces.
+  tiger: { ...PREDATOR_BASE, kind: 'tiger', name: 'Tiger', body: { height: 2, climb: 3, drop: 4 }, speed: 3.4, maxHp: 90, bite: 14, blockDamage: 6, threat: 11, points: 90, box: [0.5, 1.3], abilities: { stealth: 0.5, pounce: 1.8 } },
+  // Flies over walls and dives at rabbits in the open; a roof keeps it off.
+  hawk: { ...PREDATOR_BASE, kind: 'hawk', name: 'Hawk', body: PREY_BODY, speed: 5, maxHp: 25, bite: 6, blockDamage: 0, threat: 6, points: 50, box: [0.5, 0.6], abilities: { flier: true } },
 };
 
 /** The kind of a creature (older saves have none: rabbits for prey, wolves for predators). */

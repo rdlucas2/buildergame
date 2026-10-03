@@ -40,7 +40,12 @@ to every material, and share what you make as files that anyone can drop into th
     is beaten. **Call now** brings the next wave early for bonus points.
   - Foxes are fast and weak, and the only predators that fit through 1-high gaps. Wolves and badgers
     find the weakest stretch of wall (counting damage already done) and chew through it; badgers
-    dig fastest. The waves for a seed are always the same.
+    dig fastest. From 8:00 come **tigers**, which leap 3 blocks (walls must be 4 high to stop them),
+    are hard to spot and pounce; from 11:00 **bears**, slow tanks that smash through walls and crack
+    the blocks beside; from 12:00 **hawks**, which fly over walls and dive at rabbits in the open, so
+    only a roof keeps them off. From 15:00 some groups are gold **elites**, and the first waves at
+    10:00 and 20:00 bring a huge red **boss**. Every sixth wave is themed: a Fox Swarm, Tiger Hunt,
+    Bear Siege or Hawk Raid. The waves for a seed are always the same.
   - Rabbits are **defenders** (red scarves), which man the lookout posts and shoot at predators
     they can see, or **breeders**, which keep eating, drinking and raising young, and run
     back inside the warren when predators come. The − and + buttons set how many defend. Extra
