@@ -12,6 +12,9 @@ const CRACK_LEVELS = [0.18, 0.36, 0.55];
 const CRACK_REFRESH = 0.25;
 /** Shots are drawn as cubes of this size, scaled to each weapon's. */
 const SHOT_SIZE = 0.14;
+/** Every lookout post flies a flag, so posts stand out from the walls at a glance. */
+const FLAG_POLE = { height: 1.5, width: 0.07, inset: 0.12 };
+const FLAG = { width: 0.5, height: 0.3, depth: 0.04, color: 0xe8453c };
 
 /**
  * Draws a defense round: the warren's blocks (remeshed chunk by chunk as they are built or
@@ -32,6 +35,13 @@ export class DefenseView {
   private beams: InstancedMesh;
   private readonly from = new Vector3();
   private readonly to = new Vector3();
+  private readonly poleGeometry = new BoxGeometry(FLAG_POLE.width, FLAG_POLE.height, FLAG_POLE.width);
+  private readonly flagGeometry = new BoxGeometry(FLAG.width, FLAG.height, FLAG.depth);
+  private readonly poleMaterial = new MeshBasicMaterial({ color: 0x3a2a1a });
+  private readonly flagMaterial = new MeshBasicMaterial({ color: FLAG.color });
+  private poles: InstancedMesh;
+  private flags: InstancedMesh;
+  private flagShape = -1;
   private crackVersion = -1;
   private crackTimer = 0;
   private readonly tmp = new Object3D();
@@ -68,7 +78,45 @@ export class DefenseView {
     }
     this.shots = this.newShots(64);
     this.beams = this.newBeams(16);
+    this.poles = this.newFlags(this.poleGeometry, this.poleMaterial, 32, 'post-poles');
+    this.flags = this.newFlags(this.flagGeometry, this.flagMaterial, 32, 'post-flags');
     this.blocks.update();
+    this.updateFlags();
+  }
+
+  private newFlags(geometry: BoxGeometry, material: MeshBasicMaterial, capacity: number, name: string): InstancedMesh {
+    const mesh = new InstancedMesh(geometry, material, capacity);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.name = name;
+    this.group.add(mesh);
+    return mesh;
+  }
+
+  /** A pole and a red flag at the corner of every lookout post. */
+  private updateFlags(): void {
+    this.flagShape = this.base.shape;
+    const posts = this.base.posts();
+    if (posts.length > this.poles.instanceMatrix.count) {
+      for (const m of [this.poles, this.flags]) {
+        this.group.remove(m);
+        m.dispose();
+      }
+      this.poles = this.newFlags(this.poleGeometry, this.poleMaterial, posts.length * 2, 'post-poles');
+      this.flags = this.newFlags(this.flagGeometry, this.flagMaterial, posts.length * 2, 'post-flags');
+    }
+    posts.forEach((p, i) => {
+      const x = p.x + FLAG_POLE.inset;
+      const z = p.z + FLAG_POLE.inset;
+      this.tmp.position.set(x, p.y + FLAG_POLE.height / 2, z);
+      this.tmp.updateMatrix();
+      this.poles.setMatrixAt(i, this.tmp.matrix);
+      this.tmp.position.set(x + FLAG.width / 2, p.y + FLAG_POLE.height - FLAG.height / 2, z);
+      this.tmp.updateMatrix();
+      this.flags.setMatrixAt(i, this.tmp.matrix);
+    });
+    this.poles.count = this.flags.count = posts.length;
+    this.poles.instanceMatrix.needsUpdate = this.flags.instanceMatrix.needsUpdate = true;
   }
 
   private meshPalette() {
@@ -97,6 +145,7 @@ export class DefenseView {
   /** Per frame: remesh changed chunks, refresh cracks now and then, and place shots. */
   update(dt: number, alpha: number): void {
     this.blocks.update();
+    if (this.flagShape !== this.base.shape) this.updateFlags();
     this.crackTimer -= dt;
     if (this.crackTimer <= 0 && this.crackVersion !== this.base.version) {
       this.crackTimer = CRACK_REFRESH;
@@ -110,13 +159,20 @@ export class DefenseView {
   /** Rebuilds the crack overlays right away (tests and screenshots). */
   refresh(): void {
     this.blocks.update();
+    this.updateFlags();
     this.crackVersion = this.base.version;
     this.updateCracks();
   }
 
   private updateCracks(): void {
     const levels: Array<Array<{ x: number; y: number; z: number }>> = [[], [], []];
-    for (const b of this.base.damaged()) levels[b.wear > 0.67 ? 2 : b.wear > 0.34 ? 1 : 0].push(b);
+    const core = this.base.coreCells();
+    for (const b of this.base.damaged()) {
+      const level = levels[b.wear > 0.67 ? 2 : b.wear > 0.34 ? 1 : 0];
+      // The core wears as one: crack every block of it.
+      if (core.length && this.base.materialAt(b.x, b.y, b.z) === 'core') level.push(...core);
+      else level.push(b);
+    }
     levels.forEach((cells, k) => {
       let mesh = this.cracks[k];
       if (cells.length > mesh.instanceMatrix.count) {
@@ -202,5 +258,10 @@ export class DefenseView {
     this.cube.dispose();
     this.shotGeometry.dispose();
     this.shotMaterial.dispose();
+    for (const m of [this.poles, this.flags]) m.dispose();
+    this.poleGeometry.dispose();
+    this.flagGeometry.dispose();
+    this.poleMaterial.dispose();
+    this.flagMaterial.dispose();
   }
 }

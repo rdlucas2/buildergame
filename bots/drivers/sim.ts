@@ -12,7 +12,12 @@ export class SimTable implements Table {
   readonly session: DefenseSession;
   readonly size = DEFENSE_GROUND;
 
-  constructor(seed: number, modifiers: DefenseModifiers) {
+  /** `onTick` sees the round after every tick (scenario checks watch for things happening). */
+  constructor(
+    seed: number,
+    modifiers: DefenseModifiers,
+    private readonly onTick?: (s: DefenseSession) => void,
+  ) {
     this.session = DefenseSession.create({ seed, modifiers, size: this.size });
   }
 
@@ -40,7 +45,10 @@ export class SimTable implements Table {
 
   async runTo(tick: number): Promise<void> {
     const d = this.session.defense;
-    while (!d.over && d.tickIndex < tick) this.session.eco.tick();
+    while (!d.over && d.tickIndex < tick) {
+      this.session.eco.tick();
+      this.onTick?.(this.session);
+    }
   }
 
   async pause(): Promise<void> {}

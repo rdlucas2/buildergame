@@ -332,11 +332,21 @@ describe('a defense round', () => {
     expect(near.length).toBe(breeders.length);
   });
 
-  it('is lost when no rabbits are left', () => {
+  it('is lost when the core falls, not when the rabbits die', () => {
     const e = round();
     const d = e.defense!;
     e.advance(1);
+    expect(d.base.coreCells()).toHaveLength(8);
     for (const c of e.population.creatures) if (c.species === 'prey') e.population.damage(c, 1000, { cause: 'eaten' });
+    e.advance(0.1);
+    expect(d.outcome).toBe('playing');
+    const [cell] = d.base.coreCells();
+    // Any core block takes damage for the whole core, which falls all at once.
+    expect(d.base.damage(cell.x, cell.y, cell.z, d.base.coreMaxHp - 1)).toBe('damaged');
+    expect(d.base.coreHp).toBeCloseTo(1);
+    const other = d.base.coreCells()[7];
+    expect(d.base.damage(other.x, other.y, other.z, 5)).toBe('broken');
+    expect(d.base.coreCells()).toHaveLength(0);
     e.advance(0.1);
     expect(d.outcome).toBe('lost');
     expect(d.events.some((ev) => ev.kind === 'lost')).toBe(true);

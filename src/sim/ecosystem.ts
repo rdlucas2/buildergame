@@ -93,7 +93,7 @@ export class Ecosystem {
     }
     const e = new Ecosystem(size, { seed, time: START_TIME, creatures: [] });
     const modifiers = { ...NO_MODIFIERS, ...opts.defense };
-    const site = chooseWarrenSite(e.terrain, e.shores);
+    const site = chooseWarrenSite(e.terrain);
     const base = createBase(site);
     buildStarterWarren(base, site);
     e.defense = new Defense(e, Defense.initialState(site, base, modifiers));

@@ -162,9 +162,10 @@ still written as version 2. Creatures gain three optional fields:
   "base": {
     "origin": { "x": -64, "z": -12 },
     "size": { "x": 48, "y": 16, "z": 48 },
-    "palette": ["cobblestone", "planks", "lookout"],
+    "palette": ["cobblestone", "planks", "lookout", "core"],
     "voxels": { "encoding": "rle-u16-base64", "data": "…" },
-    "damage": { "encoding": "rle-u16-base64", "data": "…" }
+    "damage": { "encoding": "rle-u16-base64", "data": "…" },
+    "coreDamage": 2400
   },
   "clock": 312.4,
   "wave": 6,
@@ -199,14 +200,15 @@ still written as version 2. Creatures gain three optional fields:
 | `site` | The warren's centre, a world cell. |
 | `base` | The warren's blocks: a voxel volume like a structure's, anchored with its min corner at world cell `(origin.x, 0, origin.z)`. Voxel value `v` refers to material `palette[v-1]`, and `0` is air. The layout and encoding are the same as structure voxels (order `xzy`). |
 | `base.damage` | Damage each block has taken, in tenths of a hit point, in the same layout and encoding. A block's hit points come from its material's tier, so they are not stored. |
+| `base` `core` blocks, `base.coreDamage` | The warren's core: blocks of material `core` (2×2, 2 high, in the middle of a new warren). They share one pool of hit points (1500, times the block hit-point modifier), and `coreDamage` is the damage the core has taken, in tenths of a hit point (0 when missing). Core blocks cost no budget and can't be built or removed. A round saved before warrens had a core gets one in the middle when loaded. |
 | `clock` | Simulation seconds the round has lasted. |
 | `wave`, `nextWaveAt` | Waves started so far, and the round time of the next one. |
 | `orders` | Predator groups still to arrive: when, which kind, how many, the direction they come from (radians, from the warren), a hit-point multiplier, and an optional `rank` (`elite` or `boss`). |
 | `points`, `score` | Points left to spend, and the total ever earned. |
-| `budget`, `budgetBuys` | The block budget limit, and how many increases were bought (each costs more than the last). |
+| `budget`, `budgetBuys` | The block budget limit (every wave adds to it: 30 with the first, 2 more with each wave after), and how many increases were bought with points (each costs more than the last). |
 | `allocation` | How many rabbits should be defenders. |
 | `stats` | Round totals: kills (overall, by weapon and by predator kind), rabbits lost, blocks broken, shots fired, and `firstLoss`, the round time the first rabbit was lost (-1 while none has been). |
-| `outcome` | `playing`, or `lost` once no rabbits are left. |
+| `outcome` | `playing`, or `lost` once the core has fallen. |
 | `modifiers` | Bonuses the round started with (from the Warren Council), stored so a reload plays on with the same numbers: extra `budget` and `rabbits`; multipliers on block hit points, defender damage, bite damage taken (`armour`) and breeding (`fertility`); `startWeapon`, how many weapons after the slingshot are unlocked from the start; `rerolls` per round; and `cards` per perk offer. |
 | `unlocked`, `mainWeapon`, `loadout` | Weapons unlocked this round, the one defenders carry by default, and how many defenders carry each other weapon. Weapon ids are `slingshot`, `bow`, `crossbow`, `musket`, `rifle`, `shotgun`, `cannon`, `laser` and `plasma`; readers drop ids they don't know. |
 | `tiers`, `strength` | Material tiers that can be built with (tiers 0 to `tiers - 1`, from soft to metal), and the strength level bought for each tier (each level adds a quarter of the tier's hit points). |

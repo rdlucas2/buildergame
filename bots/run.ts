@@ -6,6 +6,7 @@
  *   npm run bots -- --style balanced --seed 42
  *   npm run bots -- --style all --mode browser --speed 16
  *   npm run bots -- --style sharpshooter --brain typesafe --rounds 3 --profile mid
+ *   npm run bots -- --style gambler --brain mock --show-requests   # TypeSafe's pipeline, offline
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,7 +17,8 @@ import { modifiersFor } from '../src/sim/defense/council';
 import { DEFENSE_GROUND } from '../src/sim/defense/replay';
 import { clock, type Brain, type Usage } from './brain';
 import { HeuristicBrain } from './brains/heuristic';
-import { MissingKeyError, TypeSafeBrain } from './brains/typesafe';
+import { MockBrain } from './brains/mock';
+import { MissingKeyError, TypeSafeBrain, type Exchange } from './brains/typesafe';
 import { afterRound, loadProfile } from './campaign';
 import { SimTable } from './drivers/sim';
 import { isStyle, PERSONAS, STYLES, type Style } from './personas';
@@ -38,6 +40,8 @@ const { values: a } = parseArgs({
     max: { type: 'string', default: '1800' },
     out: { type: 'string', default: 'bot-runs' },
     log: { type: 'boolean', default: false },
+    chaos: { type: 'string', default: '0' },
+    'show-requests': { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
 });
@@ -45,10 +49,13 @@ const { values: a } = parseArgs({
 if (a.help) {
   console.log(`npm run bots -- [options]
   --style S      ${STYLES.join(' | ')} | all (default balanced; several with commas)
-  --brain B      heuristic (offline, default) | typesafe (needs TYPESAFE_API_KEY)
+  --brain B      heuristic (offline, default) | typesafe (needs TYPESAFE_API_KEY) |
+                 mock (the TypeSafe brain against an offline stand-in: no key, no tokens)
+  --chaos P      mock only: share of requests (0-1) answered badly, to test the fallbacks
+  --show-requests  print every TypeSafe request and its answers (also saved to requests.jsonl)
   --mode M       sim (headless, fast, default) | browser (the real game, recorded to video)
   --headed       show the browser window (browser mode, needs a display)
-  --speed N      game speed in browser mode: 1, 4 or 16 (default 16)
+  --speed N      game speed in browser mode, up to 16 (default 16; the game's buttons offer 1-3)
   --url U        play the game at this address instead of a local Vite server
   --seed N       first round's seed (each later round adds 1; default 1)
   --profile P    fresh | mid | max | path to a .profile.json (default fresh)
@@ -66,11 +73,11 @@ const styles: Style[] = a.style === 'all' ? [...STYLES] : a.style!.split(',').ma
   return s as Style;
 });
 const brainKind = a.brain!;
-if (brainKind !== 'heuristic' && brainKind !== 'typesafe') fail(`Unknown brain "${brainKind}"; try heuristic or typesafe.`);
+if (brainKind !== 'heuristic' && brainKind !== 'typesafe' && brainKind !== 'mock') fail(`Unknown brain "${brainKind}"; try heuristic, typesafe or mock.`);
 const mode = a.mode!;
 if (mode !== 'sim' && mode !== 'browser') fail(`Unknown mode "${mode}"; try sim or browser.`);
 const speed = Number(a.speed);
-if (![1, 4, 16].includes(speed)) fail('--speed must be 1, 4 or 16.');
+if (!(speed > 0 && speed <= 16)) fail('--speed must be more than 0 and at most 16.');
 const seed = Number(a.seed);
 const rounds = Math.max(1, Number(a.rounds));
 const every = Number(a.every);
@@ -81,11 +88,19 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
+/** Every TypeSafe request of the current run (typesafe and mock brains). */
+let exchanges: Exchange[] = [];
+function onExchange(e: Exchange): void {
+  exchanges.push(e);
+  if (a['show-requests']) console.log(JSON.stringify(e, null, 1));
+}
+
 function makeBrain(style: Style): Brain {
   const persona = PERSONAS[style];
   if (brainKind === 'heuristic') return new HeuristicBrain(persona);
+  if (brainKind === 'mock') return new MockBrain(persona, { chaos: Number(a.chaos), seed, onExchange });
   try {
-    return new TypeSafeBrain(persona, { ...(a.model ? { model: a.model } : {}) });
+    return new TypeSafeBrain(persona, { onExchange, ...(a.model ? { model: a.model } : {}) });
   } catch (e) {
     if (e instanceof MissingKeyError) fail(e.message);
     throw e;
@@ -96,6 +111,7 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
 for (const style of styles) {
   const brain = makeBrain(style);
+  exchanges = [];
   const id = `${stamp}-${style}-${brainKind}-${mode}-s${seed}`;
   const dir = join(a.out!, id);
   mkdirSync(dir, { recursive: true });
@@ -142,11 +158,13 @@ for (const style of styles) {
   } finally {
     const video = session ? await session.close() : null;
     writeFileSync(join(dir, 'profile.json'), JSON.stringify(encodeProfileFile(profile), null, 1));
+    if (exchanges.length) writeFileSync(join(dir, 'requests.jsonl'), exchanges.map((e) => JSON.stringify(e)).join('\n') + '\n');
     writeFileSync(
       join(dir, 'report.json'),
       JSON.stringify({ id, style, persona: PERSONAS[style].brief, brain: brainKind, mode, seed, every, maxSeconds, startProfile, endProfile: profile, usage, fallbacks, video, rounds: report }, null, 1),
     );
     if (video) console.log(`  video: ${video}`);
   }
-  if (brainKind === 'typesafe') console.log(`  TypeSafe: ${usage.input} input and ${usage.output} output tokens; ${fallbacks} decision(s) fell back to rules.`);
+  if (brainKind !== 'heuristic')
+    console.log(`  ${brainKind === 'mock' ? 'Mock TypeSafe (no tokens spent; counts are estimates)' : 'TypeSafe'}: ${exchanges.length} requests, ${usage.input} input and ${usage.output} output tokens; ${fallbacks} decision(s) fell back to rules.`);
 }

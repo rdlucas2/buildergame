@@ -15,6 +15,8 @@ export interface BaseState {
   voxels: Uint16Array;
   /** Damage taken per voxel, in tenths of a hit point (0 for intact blocks and air). */
   damage: Uint16Array;
+  /** Damage the warren's core has taken, in tenths of a hit point (its blocks share one pool). */
+  coreDamage?: number;
 }
 
 export interface SpawnOrder {

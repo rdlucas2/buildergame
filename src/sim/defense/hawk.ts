@@ -15,16 +15,19 @@ const RECOVER_SECONDS = 1.5;
 const STRIKE_REACH = 0.9;
 /** Radius of the circle hawks fly over the warren when no rabbit is in the open. */
 const CIRCLE_RADIUS = 12;
+/** `target` of a hawk going for the core (no breeders are left). */
+const CORE_TARGET = -2;
 
 /**
- * A hawk: flies straight over walls at height, picks the nearest rabbit out in the open, and dives
- * to strike. It can't reach a rabbit under a roof: with every rabbit covered, it circles and waits.
- * It ignores paths and the breach field, and never breaks blocks.
+ * A hawk: flies straight over walls at height, picks the nearest breeder out in the open, and dives
+ * to strike. It can't reach a rabbit under a roof: with every breeder covered, it circles and waits.
+ * Once no breeders are left it dives at the core instead, unless the core is roofed over. It
+ * ignores paths and the breach field.
  */
 export function makeHawk(ctx: DefenseContext): Behaviour {
   return {
     needs: false,
-    decide: (pop, c) => decideHawk(pop, c),
+    decide: (pop, c) => decideHawk(ctx, pop, c),
     interval: (pop) => 0.25 + pop.rng.next() * 0.1,
     act: (pop, c, dt) => actHawk(ctx, pop, c, dt),
   };
@@ -35,11 +38,17 @@ function exposed(pop: Population, prey: Creature): boolean {
   return !pop.roofed(Math.floor(prey.x), prey.y, Math.floor(prey.z));
 }
 
-function decideHawk(pop: Population, c: Creature): void {
+function decideHawk(ctx: DefenseContext, pop: Population, c: Creature): void {
+  if (!ctx.breedersLeft()) {
+    c.target = CORE_TARGET;
+    if (c.activity !== 'bite') c.activity = 'stalk';
+    c.path = [];
+    return;
+  }
   let best: Creature | null = null;
   let bestD = Infinity;
   for (const p of pop.creatures) {
-    if (p.species !== 'prey' || p.deadFor >= 0 || !exposed(pop, p)) continue;
+    if (p.species !== 'prey' || p.deadFor >= 0 || p.role === 'defender' || !exposed(pop, p)) continue;
     const d = (p.x - c.x) ** 2 + (p.z - c.z) ** 2;
     if (d < bestD) {
       bestD = d;
@@ -56,11 +65,18 @@ function actHawk(ctx: DefenseContext, pop: Population, c: Creature, dt: number):
   c.reload = Math.max(0, c.reload - dt);
   const prey = c.target >= 0 ? pop.get(c.target) : undefined;
   const live = prey && prey.deadFor < 0 && exposed(pop, prey) ? prey : null;
-  // Where to fly: at the prey, or round the warren when there is none in the open.
+  // The core, when it is what the hawk is after and nothing roofs it over.
+  const spot = c.target === CORE_TARGET ? ctx.coreSpot() : null;
+  const core = spot && !pop.roofed(Math.floor(spot.x), spot.top, Math.floor(spot.z)) ? spot : null;
+  // Where to fly: at the prey (or the core), or round the warren when there is none in the open.
   let tx: number;
   let tz: number;
   let ty = HAWK_ALTITUDE;
-  if (live) {
+  if (core) {
+    tx = core.x;
+    tz = core.z;
+    if (Math.hypot(tx - c.x, tz - c.z) < DIVE_RANGE && c.reload <= 0) ty = core.top;
+  } else if (live) {
     tx = live.x;
     tz = live.z;
     const across = Math.hypot(tx - c.x, tz - c.z);
@@ -92,7 +108,13 @@ function actHawk(ctx: DefenseContext, pop: Population, c: Creature, dt: number):
     c.wait = up ? CLIMB_SECONDS : DIVE_SECONDS;
   }
   // Strike, then climb away to dive again.
-  if (live && c.cooldown <= 0 && c.y === live.y && Math.hypot(live.x - c.x, live.z - c.z) <= STRIKE_REACH) {
+  if (core && c.cooldown <= 0 && c.y === core.top && Math.hypot(core.x - c.x, core.z - c.z) <= STRIKE_REACH + 0.5) {
+    const cell = ctx.base.coreCells().find((b) => b.y === core.top - 1);
+    if (cell) ctx.chew(c, cell.x, cell.y, cell.z, def.bite * toughness(c));
+    c.cooldown = def.biteCooldown;
+    c.reload = RECOVER_SECONDS;
+    c.activity = 'bite';
+  } else if (live && c.cooldown <= 0 && c.y === live.y && Math.hypot(live.x - c.x, live.z - c.z) <= STRIKE_REACH) {
     pop.damage(live, def.bite * toughness(c) * ctx.biteMult(live), { cause: 'eaten', killer: c });
     c.cooldown = def.biteCooldown;
     c.reload = RECOVER_SECONDS;

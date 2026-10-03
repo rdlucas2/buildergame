@@ -9,10 +9,10 @@ import { HeuristicBrain } from './heuristic';
 
 /** Shares of grown rabbits the model can choose to make defenders. */
 const SHARES = {
-  few: { share: 0.2, text: 'About 20% of grown rabbits defend: most breed, so the colony grows fastest, but few shoot.' },
+  few: { share: 0.2, text: 'About 20% of grown rabbits defend: most breed, so the colony grows fastest and there are many breeders between the predators and the core, but few shoot.' },
   some: { share: 0.35, text: 'About 35% defend: a light guard, most rabbits still breeding.' },
   half: { share: 0.5, text: 'About half defend: as many shooting as breeding.' },
-  most: { share: 0.7, text: 'About 70% defend: heavy firepower now, but few breeders, so losses are hard to replace.' },
+  most: { share: 0.7, text: 'About 70% defend: heavy firepower now, but few breeders: losses are hard to replace, and once the breeders are gone predators go straight for the core.' },
 } as const;
 
 /** What each predator does and when it starts coming, for the model's picture of what is ahead. */
@@ -46,6 +46,20 @@ export interface TypeSafeBrainOptions {
   timeout?: number;
   /** Retry overrides (tests turn retries off). */
   retry?: Partial<RetryPolicy>;
+  /** Told of every request and its answers (or error), to log or print them. */
+  onExchange?: (e: Exchange) => void;
+  /** 'mock' when the API is the offline stand-in (see `mock.ts`). */
+  kind?: 'typesafe' | 'mock';
+}
+
+/** One request to the API: what was asked, and what came back. */
+export interface Exchange {
+  what: 'decision' | 'council';
+  state: { [key: string]: JsonValue };
+  questions: Questions;
+  answers?: Record<string, ChoiceResponse>;
+  usage?: Usage;
+  error?: string;
 }
 
 /** Labels the model chose from, mapped back to what the bot will do. */
@@ -59,8 +73,9 @@ type Answers = Record<string, ChoiceResponse>;
  * logged in the decision). Runs only in Node: the key never reaches the game.
  */
 export class TypeSafeBrain implements Brain {
-  readonly kind = 'typesafe' as const;
+  readonly kind: 'typesafe' | 'mock';
   private readonly client: TypeSafeClient;
+  private readonly onExchange?: (e: Exchange) => void;
   private readonly fallback: HeuristicBrain;
   /** The last few decisions, so the model sees what it has been doing. */
   private readonly history: string[] = [];
@@ -73,6 +88,22 @@ export class TypeSafeBrain implements Brain {
     if (!apiKey?.trim()) throw new MissingKeyError();
     this.client = new TypeSafeClient({ apiKey, ...(opts.baseURL ? { baseURL: opts.baseURL } : {}), ...(opts.model ? { defaultModel: opts.model } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}), ...(opts.retry ? { retry: opts.retry } : {}), timeout: opts.timeout ?? 20_000, logLevel: 'off' });
     this.fallback = new HeuristicBrain(persona);
+    this.kind = opts.kind ?? 'typesafe';
+    this.onExchange = opts.onExchange;
+  }
+
+  /** One `systemOne` request, logged either way. */
+  private async ask(what: Exchange['what'], state: { [key: string]: JsonValue }, questions: Questions): Promise<{ answers: Record<string, ChoiceResponse>; usage: Usage }> {
+    try {
+      const res = await this.client.systemOne({ state, questions });
+      const answers = res.answers as Record<string, ChoiceResponse>;
+      const usage = { input: res.usage.input_tokens, output: res.usage.output_tokens };
+      this.onExchange?.({ what, state, questions, answers, usage });
+      return { answers, usage };
+    } catch (e) {
+      this.onExchange?.({ what, state, questions, error: describeError(e) });
+      throw e;
+    }
   }
 
   /** The state the model judges: the round, the warren, the rabbits and weapons, as named JSON. */
@@ -90,10 +121,12 @@ export class TypeSafeBrain implements Brain {
         predators_on_the_field: o.predators,
         predators_still_coming_this_wave: o.incoming,
         threats: ahead,
-        note: 'Waves get bigger and tougher every minute; past 20:00 they grow very fast.',
+        rules: 'Predators go for breeders first. Once no breeders are left they attack the core, and the round is lost when the core falls. Waves get bigger and tougher every minute; past 20:00 they grow very fast. Every wave adds block budget.',
       },
       warren: {
+        core_hit_points: `${o.coreHp} of ${o.coreMax}`,
         free_block_budget: o.budget - o.cost,
+        block_budget_next_wave_adds: o.waveBudget,
         points: o.points,
         blocks: o.blocks,
         damaged_blocks: o.damaged,
@@ -146,14 +179,14 @@ export class TypeSafeBrain implements Brain {
     const questions = this.questions(view);
     let res;
     try {
-      res = await this.client.systemOne({ state: this.state(view), questions });
+      res = await this.ask('decision', this.state(view), questions);
     } catch (e) {
       const d = this.fallback.decideNow(view);
       this.remember(view, d.why);
       return { ...d, fallback: describeError(e) };
     }
-    const d = this.toDecision(view, res.answers as Answers);
-    d.usage = { input: res.usage.input_tokens, output: res.usage.output_tokens };
+    const d = this.toDecision(view, res.answers);
+    d.usage = res.usage;
     this.remember(view, d.why);
     return d;
   }
@@ -228,9 +261,9 @@ export class TypeSafeBrain implements Brain {
       profile: { clover: profile.clover, best_time_survived: clock(profile.stats.bestTime), rounds_played: profile.stats.rounds, upgrades: profile.upgrades },
     };
     try {
-      const res = await this.client.systemOne({ state, questions });
-      const a = res.answers.upgrade as ChoiceResponse;
-      const usage: Usage = { input: res.usage.input_tokens, output: res.usage.output_tokens };
+      const res = await this.ask('council', state, questions);
+      const a = res.answers.upgrade;
+      const usage = res.usage;
       const probs = { upgrade: top(a) };
       if (a.choice === 'save') return { buy: null, why: 'saving Clover', probs, usage };
       const offer = offers.find((u) => u.id === a.choice);

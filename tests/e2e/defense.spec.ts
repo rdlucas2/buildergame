@@ -91,8 +91,16 @@ test('Fortify builds and breaks warren blocks within the budget', async ({ page 
   await frames(page);
   await expect(page.locator('#hud-mode')).toHaveText('Warren Defense: Masonry — Fortify');
   await expect(page.locator('#hotbar')).toBeVisible();
+  // Five warren blocks, named, with cost and hit points; the stone wall to start with.
+  const slots = page.locator('#hotbar .block-slot');
+  await expect(slots).toHaveCount(5);
+  await expect(slots.locator('.slot-name')).toHaveText(['Wood wall', 'Stone wall', 'Brick wall', 'Iron wall', 'Lookout post']);
+  await expect(page.locator('#hotbar .block-slot.selected .slot-name')).toHaveText('Stone wall');
+  await expect(slots.nth(1).locator('.slot-cost')).toHaveText('▣3 · 60hp');
+  await expect(page.locator('#hotbar .block-slot.locked .slot-name')).toHaveText(['Brick wall', 'Iron wall']);
+  await expect(page.locator('#hotbar .block-slot.post .post-flag')).toHaveText('⚑');
   expect(await page.evaluate(() => window.__game!.fortifyAim())).toEqual({ voxel: null, place: { x: spot.x, y: 0, z: spot.z } });
-  expect(await page.evaluate(() => window.__game!.act(2))).toBe(true); // cobblestone, cost 3
+  expect(await page.evaluate(() => window.__game!.act(2))).toBe(true); // stone wall, cost 3
   expect((await info(page)).cost).toBe(start.cost + 3);
   await frames(page);
   expect(await page.evaluate(() => window.__game!.fortifyAim())).toMatchObject({ voxel: { x: spot.x, y: 0, z: spot.z } });
@@ -100,13 +108,14 @@ test('Fortify builds and breaks warren blocks within the budget', async ({ page 
   expect(await page.evaluate(() => window.__game!.act(0))).toBe(true);
   expect((await info(page)).cost).toBe(start.cost);
 
-  // Metal blocks are locked at the start of a round.
+  // Metal blocks are locked at the start of a round, and the bar says when they unlock.
   await page.keyboard.press('Digit4'); // iron
+  await expect(page.locator('.toast', { hasText: 'Iron wall is locked. Metal unlocks once you survive 8:00, or earn 3000 points.' })).toBeVisible();
   expect(await page.evaluate(() => window.__game!.act(2))).toBe(false);
   await expect(page.locator('.toast', { hasText: 'Metal blocks are not unlocked yet.' })).toBeVisible();
 
   // Over the budget nothing is built.
-  await page.keyboard.press('Digit1'); // cobblestone, cost 3
+  await page.keyboard.press('Digit2'); // stone wall, cost 3
   const free = start.budget - start.cost;
   // Fill rows along the edge of the buildable area with cobblestone until the budget is nearly spent.
   await page.evaluate(
@@ -182,7 +191,7 @@ test('the round summary shows when the warren falls, and a new round starts fres
   await frames(page, 4);
   const summary = page.locator('#round-summary');
   await expect(summary).toBeVisible();
-  await expect(summary).toContainText('Your rabbits held out for');
+  await expect(summary).toContainText('The core held out for');
   await page.screenshot({ path: `${SHOTS}/defense-round-summary.png` });
   await summary.locator('#round-restart').click();
   await expect(summary).toBeHidden();

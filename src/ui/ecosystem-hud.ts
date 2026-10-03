@@ -9,7 +9,6 @@ export interface EcosystemHudHandlers {
   onNature: () => void;
 }
 
-const SPEED_LABEL: Record<Speed, string> = { 0: '❚❚', 1: '1×', 4: '4×', 16: '16×' };
 
 /** The time strip shown in wild worlds: clock, playback speed and a button for the Nature panel. */
 export class EcosystemHud {
@@ -24,13 +23,14 @@ export class EcosystemHud {
   private lastPrey = -1;
   private lastWolves = -1;
 
-  constructor(container: HTMLElement, handlers: EcosystemHudHandlers) {
-    const speeds = el('div', { class: 'eco-speeds', role: 'group', 'aria-label': 'Time speed' });
-    for (const s of SPEEDS) {
-      const b = el('button', { class: 'eco-speed', dataset: { speed: String(s) }, title: s === 0 ? 'Pause' : `${s}× speed`, onclick: () => handlers.onSpeed(s) }, SPEED_LABEL[s]);
-      this.speedButtons.set(s, b);
-      speeds.append(b);
-    }
+  private readonly speedsEl = el('div', { class: 'eco-speeds', role: 'group', 'aria-label': 'Time speed' });
+
+  constructor(
+    container: HTMLElement,
+    private readonly handlers: EcosystemHudHandlers,
+  ) {
+    const speeds = this.speedsEl;
+    this.setSpeeds(SPEEDS);
     this.root = el(
       'div',
       { class: 'eco-strip', id: 'eco-strip' },
@@ -47,6 +47,19 @@ export class EcosystemHud {
 
   setVisible(v: boolean): void {
     this.root.style.display = v ? 'flex' : 'none';
+  }
+
+  /** The speed buttons to offer (wild worlds and Warren Defense have their own). */
+  setSpeeds(list: readonly Speed[]): void {
+    if (list.length === this.speedButtons.size && list.every((s) => this.speedButtons.has(s))) return;
+    this.speedsEl.replaceChildren();
+    this.speedButtons.clear();
+    for (const s of list) {
+      const b = el('button', { class: 'eco-speed', dataset: { speed: String(s) }, title: s === 0 ? 'Pause (P)' : `${s}× speed`, onclick: () => this.handlers.onSpeed(s) }, s === 0 ? '❚❚' : `${s}×`);
+      this.speedButtons.set(s, b);
+      this.speedsEl.append(b);
+    }
+    this.lastSpeed = null;
   }
 
   update(time: number, speed: Speed, prey: number, wolves: number): void {

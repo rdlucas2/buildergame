@@ -56,6 +56,11 @@ export interface DefenseObservation {
   rerolls: number;
   /** 5-minute milestones reached. */
   milestones: number;
+  /** The core's hit points left and in all (0 once it has fallen: the round is lost). */
+  coreHp: number;
+  coreMax: number;
+  /** Block budget the next wave brings. */
+  waveBudget: number;
 }
 
 /**
@@ -154,5 +159,8 @@ export function observeRound(eco: Ecosystem): DefenseObservation {
     perks: d.perks.length,
     rerolls: d.rerolls,
     milestones: d.milestones,
+    coreHp: Math.ceil(d.base.coreHp),
+    coreMax: d.base.coreMaxHp,
+    waveBudget: d.waveBudget,
   };
 }

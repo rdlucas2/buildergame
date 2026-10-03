@@ -39,8 +39,11 @@ export function tierOf(material: string): number {
   return TIER_OF[material] ?? 0;
 }
 
+/** The warren's core: part of every warren, never built or removed by the player, and free. */
+export const CORE = 'core';
+
 export function blockCost(material: string): number {
-  return TIERS[tierOf(material)].cost;
+  return material === CORE ? 0 : TIERS[tierOf(material)].cost;
 }
 
 /** Hit points that block upgrades add per strength level of a tier. */
@@ -54,3 +57,22 @@ export function blockHp(material: string, strength: readonly number[] = [], mult
   const t = tierOf(material);
   return Math.round(TIERS[t].hp * (1 + STRENGTH_PER_LEVEL * (strength[t] ?? 0)) * multiplier);
 }
+
+/** A block Fortify builds with: what it is called, and what it is for. */
+export interface WarrenBlock {
+  material: string;
+  name: string;
+  role: string;
+}
+
+/**
+ * The blocks a warren is built from: four walls from cheap to tough (one per tier: wood, stone,
+ * masonry, metal) and the lookout post.
+ */
+export const WARREN_BLOCKS: readonly WarrenBlock[] = [
+  { material: 'planks', name: 'Wood wall', role: 'Cheap and quick: steps, roofs and patching holes.' },
+  { material: 'cobblestone', name: 'Stone wall', role: 'The everyday wall.' },
+  { material: 'stone_bricks', name: 'Brick wall', role: 'Masonry: twice as tough as stone.' },
+  { material: 'iron', name: 'Iron wall', role: 'Metal: the toughest wall.' },
+  { material: 'lookout', name: 'Lookout post', role: 'A defender stands on top and shoots from it, and every defender needs one. Make the top block of a wall a post, so defenders can walk the wall from post to post.' },
+];

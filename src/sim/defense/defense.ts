@@ -13,7 +13,7 @@ import { BreachField, SolidSnapshot } from './field';
 import type { DefenseContext } from './context';
 import { makeDefender } from './defender';
 import { met, type Progress } from './criteria';
-import { TIERS, blockCost, tierOf } from './materials';
+import { CORE, TIERS, blockCost, tierOf } from './materials';
 import { RARITIES, rollOffer, totalsOf, type PerkTotals } from './perks';
 import { makeRaider } from './raider';
 import { BOSS_TIMES, OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
@@ -48,8 +48,10 @@ export interface ActionResult {
 }
 
 export type DefenseEvent =
-  | { kind: 'wave'; n: number; counts: Partial<Record<CreatureKind, number>>; name?: string; boss?: CreatureKind }
+  | { kind: 'wave'; n: number; counts: Partial<Record<CreatureKind, number>>; name?: string; boss?: CreatureKind; budget: number }
   | { kind: 'lost'; clock: number }
+  /** The core is being attacked (sent at most every `CORE_ALERT_SECONDS`). */
+  | { kind: 'core'; hp: number; max: number }
   | { kind: 'unlock'; weapon: string }
   | { kind: 'tier'; tier: number }
   | { kind: 'offer'; pending: number }
@@ -59,6 +61,13 @@ export type DefenseEvent =
 export const START_BUDGET = 700;
 /** Budget added by each purchase, and the price of the first purchase (it grows each time). */
 export const BUDGET_STEP = 100;
+/** Block budget every wave brings, from the first wave on, and how much more each wave after. */
+export const WAVE_BUDGET = 30;
+export const WAVE_BUDGET_GROWTH = 2;
+/** Seconds between alerts that the core is under attack. */
+const CORE_ALERT_SECONDS = 20;
+/** How close (from its middle to the block's nearest face) a predator must be to gnaw the core. */
+const CORE_REACH = 0.7;
 const BUDGET_PRICE = 150;
 const BUDGET_PRICE_GROWTH = 1.18;
 /** How many rabbits a warren holds (breeding slows towards it): the colony can't grow without end. */
@@ -162,6 +171,10 @@ export class Defense implements DefenseContext {
   /** The solid snapshot the breach fields are built on, and the fields built on it, by kind. */
   private snapshot: { at: number; shape: number; nav: Navigator; snap: SolidSnapshot } | null = null;
   private readonly fields = new Map<CreatureKind, BreachField>();
+  /** What the fields lead to: the breeders, or (once there are none) the core. */
+  private fieldGoal: 'breeders' | 'core' = 'breeders';
+  private lastCoreDamage = 0;
+  private lastCoreAlert = -Infinity;
   private readonly breeder: Behaviour;
   private readonly defender: Behaviour;
   private readonly raider: Behaviour;
@@ -202,6 +215,8 @@ export class Defense implements DefenseContext {
     this.totals = totalsOf(this.perks);
     this.base.hpMultiplier = this.modifiers.blockHp;
     this.base.strength = this.strength;
+    // Rounds saved before warrens had a core get one in the middle.
+    if (this.outcome === 'playing' && this.base.coreCells().length === 0) this.base.placeCore(this.site.x, this.site.z);
     this.combat = new Combat(eco.population, eco.solids);
     this.breeder = {
       needs: true,
@@ -238,6 +253,8 @@ export class Defense implements DefenseContext {
   private install(): void {
     const { population: pop, solids, vegetation: veg } = this.eco;
     pop.searchBudget = { ...SEARCH_BUDGET };
+    // Rabbits in a warren live on grass alone: no water needed.
+    pop.needsWater = false;
     pop.caps = { prey: WARREN_CAPACITY + this.modifiers.rabbits };
     pop.behaviourFor = (c) => (c.species === 'predator' ? (defOf(c).abilities.flier ? this.hawk : this.raider) : c.role === 'defender' ? this.defender : this.breeder);
     pop.onDeath = (c, info) => this.onDeath(c, info);
@@ -316,13 +333,36 @@ export class Defense implements DefenseContext {
       this.lastSafety = this.clock;
       this.eco.safety.invalidate();
     }
-    if (this.eco.population.count('prey') === 0) {
+    // The round is lost when the core falls (the rabbits are what predators go for first).
+    if (this.base.coreCells().length === 0) {
       this.outcome = 'lost';
       this.events.push({ kind: 'lost', clock: this.clock });
+    } else if (this.base.coreDamage > this.lastCoreDamage) {
+      if (this.clock - this.lastCoreAlert >= CORE_ALERT_SECONDS) {
+        this.lastCoreAlert = this.clock;
+        this.events.push({ kind: 'core', hp: Math.ceil(this.base.coreHp), max: this.base.coreMaxHp });
+      }
     }
+    this.lastCoreDamage = this.base.coreDamage;
+  }
+
+  /** Lookout posts with a defender standing guard on them. */
+  get manned(): number {
+    const posts = new Set(this.base.posts().map((p) => `${p.x},${p.y},${p.z}`));
+    let n = 0;
+    for (const c of this.eco.population.creatures)
+      if (c.role === 'defender' && c.deadFor < 0 && c.activity === 'guard' && posts.has(`${Math.floor(c.x)},${c.y},${Math.floor(c.z)}`)) n++;
+    return n;
+  }
+
+  /** Block budget the next wave brings. */
+  get waveBudget(): number {
+    return WAVE_BUDGET + WAVE_BUDGET_GROWTH * this.wave;
   }
 
   private startWave(): void {
+    const income = this.waveBudget;
+    this.budget += income;
     this.wave++;
     // Each wave draws from its own stream, so a seed always brings the same waves whatever the
     // creatures did in between (rounds stay comparable across players and bots).
@@ -334,7 +374,7 @@ export class Defense implements DefenseContext {
     this.nextWaveAt = this.clock + WAVE_INTERVAL;
     const counts: Partial<Record<CreatureKind, number>> = {};
     for (const o of plan.orders) counts[o.kind] = (counts[o.kind] ?? 0) + o.count;
-    const event: DefenseEvent = { kind: 'wave', n: this.wave, counts };
+    const event: DefenseEvent = { kind: 'wave', n: this.wave, counts, budget: income };
     if (plan.name) event.name = plan.name;
     if (plan.boss) event.boss = plan.boss;
     this.events.push(event);
@@ -578,6 +618,7 @@ export class Defense implements DefenseContext {
         const { x, y, z } = action;
         if (!this.base.contains(x, y, z)) return { ok: false, reason: 'Outside the warren.' };
         if (!this.base.solidAt(x, y, z)) return { ok: false, reason: 'Nothing there.' };
+        if (this.base.materialAt(x, y, z) === CORE) return { ok: false, reason: "The core can't be removed: it is what the warren defends." };
         this.base.set(x, y, z, null);
         return { ok: true };
       }
@@ -658,6 +699,7 @@ export class Defense implements DefenseContext {
       if (locked) return { ok: false, reason: locked };
       if (!this.base.contains(b.x, b.y, b.z)) return { ok: false, reason: 'It does not fit inside the warren area.' };
       if (this.base.solidAt(b.x, b.y, b.z)) return { ok: false, reason: 'It overlaps blocks already there.' };
+      if (b.material === CORE) return { ok: false, reason: 'The core is part of the warren already.' };
       cost += blockCost(b.material);
     }
     if (this.base.cost() + cost > this.budget) return { ok: false, reason: `Needs ${cost} budget; ${this.budget - this.base.cost()} left.` };
@@ -667,6 +709,7 @@ export class Defense implements DefenseContext {
 
   private place(x: number, y: number, z: number, material: string): ActionResult {
     if (!getMaterial(material)) return { ok: false, reason: 'Unknown material.' };
+    if (material === CORE) return { ok: false, reason: 'The core is part of the warren already.' };
     const locked = this.locked(material);
     if (locked) return { ok: false, reason: locked };
     if (!this.base.contains(x, y, z)) return { ok: false, reason: 'Outside the warren area.' };
@@ -770,7 +813,9 @@ export class Defense implements DefenseContext {
   fieldFor(c: Creature): BreachField | null {
     const snap = this.snapshot;
     const age = snap ? this.clock - snap.at : Infinity;
-    if (!snap || age >= FIELD_REFRESH || (snap.shape !== this.base.shape && age >= FIELD_MIN_AGE)) {
+    const goal = this.breedersLeft() ? 'breeders' : 'core';
+    if (!snap || age >= FIELD_REFRESH || (snap.shape !== this.base.shape && age >= FIELD_MIN_AGE) || goal !== this.fieldGoal) {
+      this.fieldGoal = goal;
       const { origin, size } = this.base;
       const s = new SolidSnapshot(this.eco.solids, origin.x - FIELD_MARGIN, origin.z - FIELD_MARGIN, size.x + FIELD_MARGIN * 2, size.z + FIELD_MARGIN * 2, Math.min(31, size.y + 3));
       this.snapshot = { at: this.clock, shape: this.base.shape, nav: s.navigator(this.eco.terrain), snap: s };
@@ -780,11 +825,58 @@ export class Defense implements DefenseContext {
     let field = this.fields.get(kind);
     if (!field) {
       const { snap: s, nav } = this.snapshot!;
-      const goals = this.eco.population.creatures.filter((r) => r.species === 'prey' && r.deadFor < 0).map((r) => ({ x: Math.floor(r.x), y: r.y, z: Math.floor(r.z) }));
-      field = new BreachField(s, nav, defOf(c).body, this.breachCost(c), goals);
+      field = new BreachField(s, nav, defOf(c).body, this.breachCost(c), this.goals());
       this.fields.set(kind, field);
     }
     return field;
+  }
+
+  /** True while any breeder (a rabbit not defending) is alive: predators go for those first. */
+  breedersLeft(): boolean {
+    return this.eco.population.creatures.some((r) => r.species === 'prey' && r.deadFor < 0 && r.role !== 'defender');
+  }
+
+  /** Where predators are heading: the breeders, or once they are gone, the core. */
+  private goals(): Cell[] {
+    if (this.breedersLeft())
+      return this.eco.population.creatures.filter((r) => r.species === 'prey' && r.deadFor < 0 && r.role !== 'defender').map((r) => ({ x: Math.floor(r.x), y: r.y, z: Math.floor(r.z) }));
+    // The ground beside the core and the top of it: wherever a predator can stand and gnaw.
+    const cells = this.base.coreCells();
+    const core = new Set(cells.map((c) => `${c.x},${c.z}`));
+    const out: Cell[] = [];
+    for (const c of cells) {
+      if (c.y === 0)
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!core.has(`${c.x + dx},${c.z + dz}`)) out.push({ x: c.x + dx, y: 0, z: c.z + dz });
+      if (!this.base.solidAt(c.x, c.y + 1, c.z)) out.push({ x: c.x, y: c.y + 1, z: c.z });
+    }
+    return out;
+  }
+
+  /** A core block this predator is touching (beside it or standing on it), or null. */
+  coreNear(c: Creature): Cell | null {
+    const h = defOf(c).body.height;
+    for (const b of this.base.coreCells()) {
+      const dx = Math.max(b.x - c.x, 0, c.x - (b.x + 1));
+      const dz = Math.max(b.z - c.z, 0, c.z - (b.z + 1));
+      if (Math.hypot(dx, dz) > CORE_REACH) continue;
+      if (b.y === c.y - 1 || (b.y >= c.y && b.y < c.y + h)) return b;
+    }
+    return null;
+  }
+
+  /** The middle of the core and the cell on top of it, or null once it has fallen. */
+  coreSpot(): { x: number; z: number; top: number } | null {
+    const cells = this.base.coreCells();
+    if (cells.length === 0) return null;
+    let x = 0;
+    let z = 0;
+    let top = 0;
+    for (const c of cells) {
+      x += c.x + 0.5;
+      z += c.z + 0.5;
+      top = Math.max(top, c.y + 1);
+    }
+    return { x: x / cells.length, z: z / cells.length, top };
   }
 
   chew(c: Creature, x: number, y: number, z: number, amount: number): void {

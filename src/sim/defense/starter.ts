@@ -1,29 +1,31 @@
-import type { ShoreIndex } from '../shores';
 import { cellIndex, inGround, type Terrain } from '../terrain';
 import { BASE_SIZE, DefenseBase, LOOKOUT } from './base';
 
 /** Footprint of the starter warren (walls included). */
 export const WARREN_SIZE = 15;
 const WALL_HEIGHT = 3;
+/** Dry ground kept clear around the starter warren. */
+const SITE_MARGIN = 4;
 
 /**
- * Picks where the warren goes: on dry ground a short walk from the water nearest the origin, so
- * the rabbits can drink without going far. Returns the warren's centre cell.
+ * Picks where the warren goes: the dry ground nearest the middle of the map with room for the whole
+ * footprint and a margin. Rabbits in a warren need no water, so it doesn't matter how far it is.
+ * Returns the warren's centre cell.
  */
-export function chooseWarrenSite(terrain: Terrain, shores: ShoreIndex): { x: number; z: number } {
-  const shore = shores.nearest(0, 0, terrain.size);
-  if (!shore) return { x: 0, z: 0 };
-  const d = Math.hypot(shore.x, shore.z) || 1;
-  const ux = -shore.x / d;
-  const uz = -shore.z / d;
-  // Step back from the shore until the whole footprint is dry.
-  const half = Math.floor(WARREN_SIZE / 2);
-  for (let back = half + 3; back < half + 40; back++) {
-    const cx = Math.round(shore.x + ux * back);
-    const cz = Math.round(shore.z + uz * back);
-    if (dryFootprint(terrain, cx, cz, half + 1)) return { x: cx, z: cz };
+export function chooseWarrenSite(terrain: Terrain): { x: number; z: number } {
+  const r = Math.floor(WARREN_SIZE / 2) + SITE_MARGIN;
+  for (let ring = 0; ring < 40; ring++) {
+    const d = ring * 3;
+    for (let i = -ring; i <= ring; i++)
+      for (const [x, z] of [
+        [i * 3, -d],
+        [i * 3, d],
+        [-d, i * 3],
+        [d, i * 3],
+      ])
+        if (dryFootprint(terrain, x, z, r)) return { x: x + 0, z: z + 0 }; // no -0
   }
-  return { x: Math.round(shore.x + ux * (half + 3)), z: Math.round(shore.z + uz * (half + 3)) };
+  return { x: 0, z: 0 };
 }
 
 function dryFootprint(t: Terrain, cx: number, cz: number, r: number): boolean {
@@ -38,9 +40,9 @@ export function createBase(site: { x: number; z: number }): DefenseBase {
 }
 
 /**
- * Builds the starter warren around `site`: cobblestone walls 3 blocks high that wolves can't leap,
- * a 1-high rabbit gap in the middle of each side, wooden steps up to the wall top inside two
- * corners, and a lookout post on each corner for defenders to stand on.
+ * Builds the starter warren around `site`: the core in the middle (2×2, 2 high), cobblestone walls
+ * 3 blocks high that wolves can't leap, a 1-high rabbit gap in the middle of each side, wooden steps
+ * up to the wall top inside two corners, and a lookout post on each corner for defenders to stand on.
  */
 export function buildStarterWarren(base: DefenseBase, site: { x: number; z: number }): void {
   const h = Math.floor(WARREN_SIZE / 2);
@@ -79,4 +81,5 @@ export function buildStarterWarren(base: DefenseBase, site: { x: number; z: numb
     [x0, z1],
     [x1, z1],
   ]) base.set(x, WALL_HEIGHT, z, LOOKOUT);
+  base.placeCore(site.x, site.z);
 }
