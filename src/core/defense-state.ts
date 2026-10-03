@@ -125,4 +125,8 @@ export interface DefenseState {
   rewarded: boolean;
   /** Boss waves sent so far (one at 10:00, one at 20:00). */
   bosses: number;
+  /** Rabbits the warren has room for, from the ground its walls enclose (as last built by the player). */
+  room?: number;
+  /** The warren design the round started from (a library structure), for new rounds; none for the starter warren. */
+  design?: { id: string; name: string };
 }

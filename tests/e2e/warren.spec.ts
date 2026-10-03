@@ -123,3 +123,46 @@ test('a warren full of lookout posts: every post flies a flag and defenders man 
   await page.screenshot({ path: `${SHOTS}/53-lookouts-fortify.png` });
   expect(errors).toEqual([]);
 });
+
+test('the Shop expands the warren: a new ring of walls with posts and room for more rabbits', async ({ page }) => {
+  const errors = await boot(page);
+  expect(await page.evaluate((p) => window.__game!.importProfile(p), { ...newProfile(), upgrades: levelsAt(1) } as unknown as Record<string, unknown>)).toBeNull();
+  await defenseWorld(page, 'Expand');
+  const d = await info(page);
+  const shop = page.locator('#shop');
+  const expand = shop.locator('#shop-expand');
+
+  // At first the ring costs more budget than is left: the Shop says so and won't build it.
+  await page.keyboard.press('KeyU');
+  await expect(shop.locator('.shop-item .armory-name')).toHaveText(['More block budget', 'Expand the warren', 'Repair everything', 'Reinforce the warren']);
+  await expect(expand).toContainText(`(${d.room} now)`);
+  await expect(expand).toContainText(/rabbit gap in each side/);
+  await expect(expand.locator('.shop-buy')).toBeDisabled();
+  await page.keyboard.press('Escape');
+
+  // Waves add budget until it can be built.
+  const ready = () => page.evaluate(() => window.__game!.defenseOptions().some((o) => o.id === 'expand-warren'));
+  for (let i = 0; i < 40 && !(await ready()); i++) await advance(page, 20);
+  expect(await ready()).toBe(true);
+  const before = await info(page);
+  await page.keyboard.press('KeyU');
+  await expect(expand.locator('.shop-buy')).toBeEnabled();
+  const promised = Number((await expand.locator('.armory-info').textContent())!.match(/room for (\d+) rabbits/)![1]);
+  await expand.locator('.shop-buy').click();
+  await expect(page.locator('.toast', { hasText: `The warren has room for ${promised} rabbits now.` })).toBeVisible();
+  const after = await info(page);
+  expect(after.room).toBe(promised);
+  expect(after.room).toBeGreaterThan(before.room + 20);
+  expect(after.posts.length).toBeGreaterThan(before.posts.length + 30);
+  await page.keyboard.press('Escape');
+  await expect(shop).toBeHidden();
+
+  // On to the next morning, with defenders out on the new posts.
+  await page.evaluate(() => window.__game!.defenseApply({ type: 'allocate', defenders: 40 }));
+  for (let i = 0; i < 30 && !(await page.evaluate(() => window.__game!.eco()!.daylight > 0.9)); i++) await advance(page, 10);
+  await page.evaluate(() => window.__game!.setStartVisible(false));
+  await page.evaluate((s) => window.__game!.setPose({ position: [s.x + 1, 9, s.z + 20], yaw: 0, pitch: -0.45 }), d.site);
+  await frames(page, 4);
+  await page.screenshot({ path: `${SHOTS}/54-warren-expanded.png` });
+  expect(errors).toEqual([]);
+});

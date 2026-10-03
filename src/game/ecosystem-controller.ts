@@ -19,7 +19,8 @@ import { WEAPONS } from '../sim/defense/weapons';
 import { Ecosystem, PACK_SIZE } from '../sim/ecosystem';
 import { cellIndex, inGround, isShore } from '../sim/terrain';
 import type { StructureLibrary } from '../storage/library';
-import { openArmory, openPerkOffer } from '../ui/armory';
+import { openPerkOffer, openShop } from '../ui/shop';
+import { onPanelChange, type PanelHandle } from '../ui/panel';
 import { setBotOverlay } from '../ui/bot-overlay';
 import { countOf, DefenseHud } from '../ui/defense-hud';
 import { EcosystemHud, openNaturePanel } from '../ui/ecosystem-hud';
@@ -86,15 +87,13 @@ export class EcosystemController {
     });
     this.defenseHud = new DefenseHud(container, {
       onCallWave: () => this.report(this.applyDefense({ type: 'callWave' }), 'The next wave is on its way.'),
-      onBuyBudget: () => this.report(this.applyDefense({ type: 'buyBudget' }), 'Block budget raised by 100.'),
       onAllocate: (delta) => {
         const d = this.defense;
         if (d) this.applyDefense({ type: 'allocate', defenders: d.allocation + delta });
       },
       onFortify: () => this.onToggleFortify?.(),
       onPerk: () => this.openPerks(),
-      onRepair: () => this.report(this.applyDefense({ type: 'repair' }), 'Repairs done.'),
-      onArmory: () => this.openArmory(),
+      onShop: () => this.openShop(),
     });
     worldMode.group.add(this.fortify.group);
     const lookup = (id: string) => this.library.get(id);
@@ -205,21 +204,38 @@ export class EcosystemController {
     return true;
   }
 
-  /** The Armory panel: weapons, block strength and perks. */
-  openArmory(): boolean {
+  /** The Shop: block budget, repairs, reinforcing the warren; weapons and perks. Pauses the round. */
+  openShop(): boolean {
     const d = this.defense;
     if (!d) return false;
-    openArmory(d, (a) => this.applyDefense(a));
+    this.pauseWhileOpen(openShop(d, (a) => this.applyDefense(a)));
     return true;
   }
 
-  /** The waiting perk offer, if any. */
+  /** The waiting perk offer, if any. Pauses the round while the cards are up. */
   openPerks(): boolean {
     const d = this.defense;
     if (!d) return false;
-    openPerkOffer(d, (a) => this.applyDefense(a));
+    this.pauseWhileOpen(openPerkOffer(d, (a) => this.applyDefense(a)));
     return true;
   }
+
+  /** Holds the round still while a panel is open, and carries on at the same speed when it closes. */
+  private pauseWhileOpen(panel: PanelHandle | null): void {
+    if (!panel || this.replay) return;
+    if (this.resumeSpeed === null) {
+      this.resumeSpeed = this.speed;
+      this.setSpeed(0);
+    }
+    const off = onPanelChange((open) => {
+      if (open) return;
+      off();
+      const s = this.resumeSpeed;
+      this.resumeSpeed = null;
+      if (s !== null && this.speed === 0) this.setSpeed(s);
+    });
+  }
+  private resumeSpeed: Speed | null = null;
 
   private report(r: ActionResult, success: string): void {
     toast(r.ok ? success : (r.reason ?? 'Not possible right now.'), r.ok ? 'success' : 'error', 1800);
@@ -356,6 +372,7 @@ export class EcosystemController {
         coreHp: d.base.coreHp,
         coreMax: d.base.coreMaxHp,
         waveBudget: d.waveBudget,
+        room: d.room,
       });
       const second = Math.floor(d.clock);
       if (second !== this.lastRoundSecond) {
@@ -499,6 +516,9 @@ export class EcosystemController {
       offers: d.offers.length,
       repairPrice: d.repairPrice,
       modifiers: { ...d.modifiers },
+      room: d.room,
+      design: d.design ? { ...d.design } : null,
+      core: d.base.coreCells().length,
     };
   }
 
@@ -708,6 +728,12 @@ export interface DefenseInfo {
   fortifying: boolean;
   /** The permanent upgrades this round started with. */
   modifiers: DefenseModifiers;
+  /** Rabbits the warren has room for. */
+  room: number;
+  /** The warren design the round started from (null: the starter warren). */
+  design: { id: string; name: string } | null;
+  /** Blocks of the core still standing (8, or 0 once it has fallen). */
+  core: number;
 }
 
 export interface CreatureInfo {

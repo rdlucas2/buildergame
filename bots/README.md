@@ -5,7 +5,7 @@ strategies, and catch balance problems. Each bot round writes a replay that play
 the game.
 
 ```sh
-npm run bots:test -- --quick                                # rules and balance checks, offline (~1 min)
+npm run bots:test -- --quick                                # rules and balance checks, offline (~1½ min)
 npm run bots -- --style balanced --seed 42                  # one headless round
 npm run bots -- --style all --mode browser --headed         # watch each style play in a browser
 npm run bots -- --style turtle --rounds 5 --profile fresh   # a campaign with Council purchases
@@ -25,6 +25,7 @@ npm run bots -- --help
 | `breeder` | Economy first: most rabbits breed, a roofed nursery, fertility and toughness perks. |
 | `balanced` | A bit of everything; walls raised before tigers and a roof before hawks. |
 | `gambler` | Calls waves early for bonus points, redeals plain perk offers, likes rare cards. |
+| `expander` | Grows the warren: saves budget for new rings of walls lined with lookout posts, for room for more rabbits and posts for more defenders. Plays for the long game past 20:00. |
 
 The personas are defined in `personas.ts`: a brief for the model, and weights for the rules.
 
@@ -33,8 +34,8 @@ The personas are defined in `personas.ts`: a brief for the model, and weights fo
 All of this runs headless in Node, offline, in seconds to minutes: iterate on the game with it, and
 save the browser and live TypeSafe for confirming.
 
-- **`npm run bots:test`** is the scenario suite. It plays rounds with every style (on a fresh
-  profile, and balanced on a maxed one) and checks:
+- **`npm run bots:test`** is the scenario suite. It plays rounds with every style on a fresh
+  profile, and balanced and expander on a maxed one, and checks:
 
   | Scenario | Checks |
   | --- | --- |
@@ -42,13 +43,17 @@ save the browser and live TypeSafe for confirming.
   | `upgrades-help` | Upgrades make the warren last longer, to at least 12:00 |
   | `core-after-breeders` | Predators only hurt the core once no breeders are left |
   | `rounds-end-at-the-core` | Every lost round ended with the core down |
+  | `one-core` | Every round has exactly one core, and no move adds to it |
+  | `warren-grows` | Expanding makes room: the expander's room, colony and defenders on posts all grow |
+  | `late-game` | With every upgrade, the expander gets past 18:00 (median), and no round reaches 30:00 |
   | `no-water` | No rabbit dies of thirst or goes to drink |
   | `budget-grows` | Every wave adds budget |
   | `legal-moves` | No move the bots make is refused |
   | `replays-repeat` | Every replay comes out the same |
   | `typesafe-pipeline` | The TypeSafe brain plays a round against the mock with no fallbacks, and keeps playing when half its answers are broken |
 
-  Use `--quick` for one seed and rounds cut at 15:00, and `--only a,b` to pick scenarios. It exits
+  Use `--quick` for one seed and rounds cut at 15:00 (`late-game` then only checks that the round
+  reaches the cut), and `--only a,b` to pick scenarios. It exits
   non-zero on a failure. The scenarios are in `scenarios.ts`; add one when you add a rule.
 - **`--brain mock`** runs the TypeSafe brain end to end against an offline stand-in for the API
   (`brains/mock.ts`). The stand-in answers each question the way the persona's rules would, with
@@ -68,7 +73,8 @@ save the browser and live TypeSafe for confirming.
 A bot decides every 10 seconds of round time (`--every`), and sooner when a perk offer is waiting.
 Code works out what is possible. `buildOptions` in `src/sim/defense/advisor.ts` lists ready-made
 build moves such as rebuilding breaches, raising the walls, roofing a nursery, adding lookouts,
-repairing, strengthening, buying budget or calling a wave. The brain only chooses among them and
+expanding the warren with a new ring of walls, repairing, reinforcing, buying budget or calling a
+wave. They are the moves a player has in the Shop and in Fortify. The brain only chooses among them and
 never invents coordinates.
 
 - **`heuristic`** (the default) plays each style by plain rules. It is deterministic, free and runs
@@ -91,7 +97,8 @@ never invents coordinates.
   | `defenders` | Share of grown rabbits who defend: few, some, half or most |
   | `build` | The advisor's options, including `wait` |
   | `perk` | The offered cards, or a redeal; only when an offer is waiting |
-  | `weapon` | The unlocked weapons; only when there are two or more |
+
+  Defenders always carry the best weapon unlocked, as in the game, so there is no weapon question.
 
   Between rounds, an `upgrade` question chooses a Warren Council purchase, or saving.
   - Code checks every answer against what was offered and applies the matching action.

@@ -327,3 +327,6 @@ body.touch.wild.defense .toasts { top: calc(140px + env(safe-area-inset-top)); }
 .slot.block-slot.post.selected { border-color: #fff; }
 .post-flag { color: #e8453c; font-size: 20px; line-height: 1; text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
 .slot-lock { position: absolute; right: -8px; top: -8px; font-size: 12px; }
+
+/* The Shop button nudges when repairs are due or points can buy something. */
+.def-btn.def-shop.attention { border-color: #f5c542; box-shadow: 0 0 0 1px rgba(245, 197, 66, 0.5); }

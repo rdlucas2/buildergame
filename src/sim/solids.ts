@@ -43,6 +43,8 @@ export class SolidMap {
   readonly index: WorldIndex;
   private readonly chunks = new Map<number, Chunk>();
   private base: SolidLayer | null = null;
+  /** Placements in the index: with none (a Warren Defense round), only the ground and the base count. */
+  private placed = 0;
 
   constructor(lookup: (id: string) => Structure | undefined) {
     this.index = new WorldIndex(lookup);
@@ -52,18 +54,21 @@ export class SolidMap {
     this.index.clear();
     this.chunks.clear();
     for (const p of placements) if (this.index.getStructure(p.structureId)) this.index.add(p);
+    this.placed = this.index.all().length;
   }
 
   add(p: Placement): void {
     if (!this.index.getStructure(p.structureId)) return;
     this.index.add(p);
     this.invalidate(this.index.boundsOf(p.id));
+    this.placed = this.index.all().length;
   }
 
   remove(id: string): void {
     const b = this.index.boundsOf(id);
     this.index.remove(id);
     this.invalidate(b);
+    this.placed = this.index.all().length;
   }
 
   /** Adds (or removes) a layer of blocks checked alongside the placements. */
@@ -89,6 +94,7 @@ export class SolidMap {
   solid(x: number, y: number, z: number): boolean {
     if (y < 0) return true;
     if (this.base && this.base.solidAt(x, y, z)) return true;
+    if (this.placed === 0) return false;
     const c = this.chunk(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
     if (y >= c.height) return false;
     const lx = x - Math.floor(x / CHUNK) * CHUNK;
@@ -99,6 +105,7 @@ export class SolidMap {
   /** True when no placement reaches into the column (x, z) at all: plain open ground. */
   openColumn(x: number, z: number): boolean {
     if (this.base && this.base.containsColumn(x, z) && this.base.columnCovered(x, z)) return false;
+    if (this.placed === 0) return true;
     const c = this.chunk(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
     if (c.height === 0) return true;
     const lx = x - Math.floor(x / CHUNK) * CHUNK;

@@ -18,6 +18,10 @@ import { meshPaletteFromEntries } from '../render/mesh-palette';
 import type { VoxelMaterials } from '../render/voxel-materials';
 
 export const DEFAULT_HOTBAR = ['stone', 'planks', 'brick', 'glass', 'grass', 'log', 'white', 'red', 'lantern'];
+/** The warren designer's blocks: the four walls, the lookout post and the core. */
+export const WARREN_HOTBAR = ['planks', 'cobblestone', 'stone_bricks', 'iron', 'lookout', 'core'];
+/** The core, which the warren designer places (and removes) as one 2×2 block, 2 high. */
+const CORE = 'core';
 export const DEFAULT_VOLUME = 64;
 export const REACH = 160;
 
@@ -44,6 +48,10 @@ export class StructureMode {
   /** When true, saving creates a new structure instead of updating `editing` (used for examples). */
   readonly asCopy: boolean;
   hover: HoverState = { voxel: null, place: null };
+  /** Designing a warren: the warren's blocks only, a fixed building area, and exactly one core. */
+  readonly warren: boolean;
+  /** Bumped whenever a block changes (so costly summaries are only worked out again when needed). */
+  revision = 0;
 
   private readonly mesh: ChunkedGridMesh;
   private readonly floor: Mesh;
@@ -54,15 +62,17 @@ export class StructureMode {
 
   constructor(
     private readonly materials: VoxelMaterials,
-    opts: { existing?: Structure; hotbar?: string[]; asCopy?: boolean } = {},
+    opts: { existing?: Structure; hotbar?: string[]; asCopy?: boolean; warren?: { area: Size3 } } = {},
   ) {
     this.editing = opts.existing ?? null;
     this.asCopy = !!opts.asCopy && !!opts.existing;
-    this.hotbar = [...(opts.hotbar ?? DEFAULT_HOTBAR)];
+    this.warren = !!opts.warren;
+    this.hotbar = [...(opts.warren ? WARREN_HOTBAR : (opts.hotbar ?? DEFAULT_HOTBAR))];
     const existing = opts.existing;
     const need = existing ? existing.voxels.size : { x: 1, y: 1, z: 1 };
     const edge = (n: number) => Math.min(MAX_STRUCTURE_EDGE, Math.max(DEFAULT_VOLUME, n + 8));
-    this.volume = { x: edge(need.x), y: edge(need.y), z: edge(need.z) };
+    // A warren is built in the same area a round gives it.
+    this.volume = opts.warren ? { x: Math.max(opts.warren.area.x, need.x), y: Math.max(opts.warren.area.y, need.y), z: Math.max(opts.warren.area.z, need.z) } : { x: edge(need.x), y: edge(need.y), z: edge(need.z) };
     this.palette = existing ? existing.palette.map((p) => ({ ...p })) : [];
     if (existing) {
       const offset = {
@@ -107,7 +117,7 @@ export class StructureMode {
   }
 
   setSlotMaterial(i: number, materialId: string): void {
-    if (i < 0 || i >= this.hotbar.length) return;
+    if (i < 0 || i >= this.hotbar.length || this.warren) return;
     this.hotbar[i] = materialId;
     paletteSlotFor(this.palette, materialId);
   }
@@ -145,27 +155,111 @@ export class StructureMode {
     this.mesh.update();
   }
 
-  /** Places the selected material at the hovered empty cell. */
+  /** Places the selected material at the hovered empty cell (the whole core, when that is selected). */
   place(): boolean {
     const cell = this.hover.place;
     if (!cell) return false;
+    if (this.selectedMaterial === CORE) return this.placeCore(cell);
     return this.setVoxel(cell, this.selectedMaterial);
   }
 
-  /** Removes the hovered block. */
+  /** Removes the hovered block (the whole core, if it is part of the core). */
   remove(): boolean {
     const cell = this.hover.voxel;
     if (!cell) return false;
+    if (this.materialAt(cell) === CORE) return this.replaceCore(null);
     return this.setVoxel(cell, null);
   }
 
-  /** Copies the hovered block's material into the selected hotbar slot. */
+  private materialAt(c: Vec3): string | null {
+    const v = this.grid.get(c.x, c.y, c.z);
+    return v === AIR ? null : (this.palette[v - 1]?.material ?? null);
+  }
+
+  /** The core's blocks now in the volume. */
+  coreCells(): Vec3[] {
+    const slot = this.palette.findIndex((p) => p.material === CORE) + 1;
+    const out: Vec3[] = [];
+    if (slot === 0) return out;
+    const { x: sx, y: sy, z: sz } = this.volume;
+    for (let y = 0; y < sy; y++) for (let z = 0; z < sz; z++) for (let x = 0; x < sx; x++) if (this.grid.get(x, y, z) === slot) out.push({ x, y, z });
+    return out;
+  }
+
+  /**
+   * Puts the core (2×2, 2 high) with its corner at `cell`, moving it if there is one already: a
+   * warren has exactly one. Refused where it doesn't fit or would overlap other blocks.
+   */
+  placeCore(cell: Vec3): boolean {
+    const cells: Vec3[] = [];
+    for (let y = 0; y < 2; y++) for (let z = 0; z < 2; z++) for (let x = 0; x < 2; x++) cells.push({ x: cell.x + x, y: cell.y + y, z: cell.z + z });
+    if (!cells.every((c) => this.inVolume(c) && (this.grid.get(c.x, c.y, c.z) === AIR || this.materialAt(c) === CORE))) return false;
+    return this.replaceCore(cells);
+  }
+
+  /** Swaps the core's blocks for `cells` (or removes it, with null) as one undoable step. */
+  private replaceCore(cells: Vec3[] | null): boolean {
+    const old = this.coreCells();
+    const slot = paletteSlotFor(this.palette, CORE);
+    const changes = new Map<string, { cell: Vec3; before: number; after: number }>();
+    for (const c of old) changes.set(`${c.x},${c.y},${c.z}`, { cell: c, before: slot, after: AIR });
+    for (const c of cells ?? []) {
+      const k = `${c.x},${c.y},${c.z}`;
+      changes.set(k, { cell: c, before: changes.get(k)?.before ?? this.grid.get(c.x, c.y, c.z), after: slot });
+    }
+    const list = [...changes.values()].filter((c) => c.before !== c.after);
+    if (list.length === 0) return false;
+    const apply = (useAfter: boolean) => {
+      for (const c of list) {
+        this.grid.set(c.cell.x, c.cell.y, c.cell.z, useAfter ? c.after : c.before);
+        this.revision++;
+        this.mesh.markVoxel(c.cell.x, c.cell.y, c.cell.z);
+      }
+    };
+    this.undo.push({ label: cells ? 'place the core' : 'remove the core', execute: () => apply(true), undo: () => apply(false) });
+    return true;
+  }
+
+  /** The blocks as a warren design, relative to their own corner. */
+  toPlan(name: string): { name: string; blocks: Array<{ x: number; y: number; z: number; material: string }> } {
+    const blocks: Array<{ x: number; y: number; z: number; material: string }> = [];
+    const b = this.grid.tightBounds();
+    if (!b) return { name, blocks };
+    for (let y = b.min.y; y < b.max.y; y++)
+      for (let z = b.min.z; z < b.max.z; z++)
+        for (let x = b.min.x; x < b.max.x; x++) {
+          const m = this.materialAt({ x, y, z });
+          if (m) blocks.push({ x: x - b.min.x, y, z: z - b.min.z, material: m });
+        }
+    return { name, blocks };
+  }
+
+  /** Starts a new design from `blocks` (relative to their corner), centred in the volume. */
+  loadBlocks(blocks: ReadonlyArray<{ x: number; y: number; z: number; material: string }>): void {
+    const sx = Math.max(0, ...blocks.map((b) => b.x + 1));
+    const sz = Math.max(0, ...blocks.map((b) => b.z + 1));
+    const ox = Math.floor((this.volume.x - sx) / 2);
+    const oz = Math.floor((this.volume.z - sz) / 2);
+    for (const b of blocks) {
+      this.grid.set(b.x + ox, b.y, b.z + oz, paletteSlotFor(this.palette, b.material));
+      this.revision++;
+        this.mesh.markVoxel(b.x + ox, b.y, b.z + oz);
+    }
+  }
+
+  /** Copies the hovered block's material into the selected hotbar slot (selects its slot, in a warren). */
   pick(): string | null {
     const cell = this.hover.voxel;
     if (!cell) return null;
     const v = this.grid.get(cell.x, cell.y, cell.z);
     const entry = this.palette[v - 1];
     if (!entry) return null;
+    if (this.warren) {
+      const i = this.hotbar.indexOf(entry.material);
+      if (i < 0) return null;
+      this.selected = i;
+      return entry.material;
+    }
     this.setSlotMaterial(this.selected, entry.material);
     return entry.material;
   }
@@ -178,7 +272,8 @@ export class StructureMode {
     if (before === after) return false;
     const apply = (v: number) => {
       this.grid.set(cell.x, cell.y, cell.z, v);
-      this.mesh.markVoxel(cell.x, cell.y, cell.z);
+      this.revision++;
+        this.mesh.markVoxel(cell.x, cell.y, cell.z);
     };
     this.undo.push({ label: materialId === null ? 'remove block' : 'place block', execute: () => apply(after), undo: () => apply(before) });
     return true;
@@ -200,6 +295,7 @@ export class StructureMode {
     const apply = (useAfter: boolean) => {
       for (const c of cells) {
         this.grid.set(c.cell.x, c.cell.y, c.cell.z, useAfter ? after : c.before);
+        this.revision++;
         this.mesh.markVoxel(c.cell.x, c.cell.y, c.cell.z);
       }
     };

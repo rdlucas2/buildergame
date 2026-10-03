@@ -84,6 +84,26 @@ describe('the warren core', () => {
     for (let i = 0; i < 60 && d.base.coreHp === before; i++) e.advance(1);
     expect(d.base.coreHp).toBeLessThan(before);
     expect(d.outcome).toBe('playing');
+
+    // A defender stood down is a breeder again: the wolf leaves the core for it.
+    expect(d.apply({ type: 'allocate', defenders: 5 }).ok).toBe(true);
+    expect(d.breedersLeft()).toBe(true);
+    e.advance(0.5);
+    expect(pop.get(wolf.target)?.role).toBe('breeder');
+  });
+
+  it('takes no harm while any breeder is alive, even from a bear smashing the wall beside it', () => {
+    const e = round();
+    const d = e.defense!;
+    const [c] = d.base.coreCells();
+    const bear = e.population.spawnKind('bear', c.x - 1, 0, c.z - 1, {});
+    expect(d.breedersLeft()).toBe(true);
+    d.chew(bear, c.x, c.y, c.z, 500);
+    d.chew(bear, c.x - 1, c.y, c.z, 500);
+    expect(d.base.coreHp).toBe(CORE_HP);
+    noBreeders(e);
+    d.chew(bear, c.x, c.y, c.z, 500);
+    expect(d.base.coreHp).toBeLessThan(CORE_HP);
   });
 
   it('hawks dive at an open core when no breeders are left, and not at a roofed one', () => {

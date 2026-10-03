@@ -76,3 +76,6 @@ export const WARREN_BLOCKS: readonly WarrenBlock[] = [
   { material: 'iron', name: 'Iron wall', role: 'Metal: the toughest wall.' },
   { material: 'lookout', name: 'Lookout post', role: 'A defender stands on top and shoots from it, and every defender needs one. Make the top block of a wall a post, so defenders can walk the wall from post to post.' },
 ];
+
+/** The core, as the warren designer offers it: placing it puts down the whole core (and moves it). */
+export const CORE_BLOCK: WarrenBlock = { material: 'core', name: 'Core', role: 'What the warren defends: a 2×2 block, 2 high. A warren has exactly one; placing it again moves it.' };

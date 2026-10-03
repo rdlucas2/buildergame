@@ -60,9 +60,9 @@ describe('replays', () => {
     expect(ids).toContain('more-lookouts');
     for (const a of expand(d, { option: 'more-lookouts' })!) expect(d.apply(a).ok).toBe(true);
     expect(expand(d, { option: 'no-such-thing' })).toBeNull();
-    // With no budget left, nothing that uses blocks is offered.
+    // With no budget left, only moves that need none are offered (turning wall tops into posts frees some).
     d.budget = d.base.cost();
-    expect(buildOptions(d).every((o) => o.budget === 0)).toBe(true);
+    expect(buildOptions(d).every((o) => o.budget <= 0)).toBe(true);
   });
 });
 

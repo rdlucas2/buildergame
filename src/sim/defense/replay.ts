@@ -1,6 +1,7 @@
 import { NO_MODIFIERS, type DefenseModifiers } from '../../core/defense-state';
 import { Ecosystem } from '../ecosystem';
 import type { DefenseAction } from './defense';
+import type { WarrenPlan } from './design';
 
 /** Ground size (cells across) of a Warren Defense world. */
 export const DEFENSE_GROUND = 512;
@@ -19,6 +20,8 @@ export interface ReplayScript {
   actions: readonly ReplayEntry[];
   /** The tick the recording ended at (a round can be stopped before it is lost). */
   ticks: number;
+  /** The warren the round started from, when it wasn't the starter warren. */
+  warren?: WarrenPlan;
 }
 
 /**
@@ -26,8 +29,8 @@ export interface ReplayScript {
  * then restored and attached with no placements. Headless runs (bots, the balance runner, replays)
  * start here so that a seed and a list of actions play out the same in the browser.
  */
-export function startRound(seed: number, modifiers: Partial<DefenseModifiers> = {}, size = DEFENSE_GROUND): Ecosystem {
-  const fresh = Ecosystem.create(size, seed, { defense: { ...NO_MODIFIERS, ...modifiers } });
+export function startRound(seed: number, modifiers: Partial<DefenseModifiers> = {}, size = DEFENSE_GROUND, warren?: WarrenPlan): Ecosystem {
+  const fresh = Ecosystem.create(size, seed, { defense: { ...NO_MODIFIERS, ...modifiers }, ...(warren ? { warren } : {}) });
   const eco = Ecosystem.restore(size, fresh.snapshot());
   eco.setPlacements([], () => undefined);
   return eco;
@@ -44,7 +47,7 @@ export function record(eco: Ecosystem): ReplayEntry[] {
 
 /** Plays a recorded round again, headless, to where its recording ended (or until it is lost). */
 export function runReplay(script: ReplayScript): Ecosystem {
-  const eco = startRound(script.seed, script.modifiers, script.size);
+  const eco = startRound(script.seed, script.modifiers, script.size, script.warren);
   const d = eco.defense!;
   d.schedule(script.actions);
   while (!d.over && d.tickIndex < script.ticks) eco.tick();

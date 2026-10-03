@@ -72,11 +72,20 @@ export function confirmDialog(title: string, message: string, okLabel = 'OK', da
 /** What kind of world to make: a plain building world, a wild sandbox, or a Warren Defense game. */
 export type WorldKind = 'plain' | 'wild' | 'defense';
 
-/** "New world" dialog: a name and the kind of world (chosen once, when the world is created). */
-export function newWorldDialog(defaultName: string): Promise<{ name: string; kind: WorldKind } | null> {
+/** A warren design a Warren Defense world can start from (its id, and a line about it). */
+export interface WarrenChoice {
+  id: string;
+  label: string;
+}
+
+/**
+ * "New world" dialog: a name and the kind of world (chosen once, when the world is created), and
+ * for Warren Defense, which warren to start with: the starter warren or one designed in the builder.
+ */
+export function newWorldDialog(defaultName: string, warrens: readonly WarrenChoice[] = []): Promise<{ name: string; kind: WorldKind; warren: string | null } | null> {
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (v: { name: string; kind: WorldKind } | null) => {
+    const finish = (v: { name: string; kind: WorldKind; warren: string | null } | null) => {
       if (settled) return;
       settled = true;
       panel.close();
@@ -97,7 +106,20 @@ export function newWorldDialog(defaultName: string): Promise<{ name: string; kin
         "Waves of predators attack your rabbits' warren. Fortify it on a block budget and split the rabbits into defenders and breeders. How long can they hold out?",
       ),
     ];
-    const submit = () => finish({ name: input.value, kind: (kinds.find((k) => k.radio.checked)?.radio.value as WorldKind | undefined) ?? 'plain' });
+    const warrenSelect = el(
+      'select',
+      { class: 'text-input', id: 'new-world-warren' },
+      el('option', { value: '' }, 'Starter warren'),
+      ...warrens.map((w) => el('option', { value: w.id }, w.label)),
+    );
+    const warrenField = el('label', { class: 'field', id: 'new-world-warren-field' }, 'Warren', warrenSelect, el('span', { class: 'muted small' }, 'Design your own with B in a Warren Defense world.'));
+    const showWarren = () => (warrenField.style.display = kinds.find((k) => k.radio.checked)?.radio.value === 'defense' ? '' : 'none');
+    for (const k of kinds) k.radio.addEventListener('change', showWarren);
+    showWarren();
+    const submit = () => {
+      const kind = (kinds.find((k) => k.radio.checked)?.radio.value as WorldKind | undefined) ?? 'plain';
+      finish({ name: input.value, kind, warren: kind === 'defense' && warrenSelect.value ? warrenSelect.value : null });
+    };
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
       e.stopPropagation();
@@ -106,6 +128,7 @@ export function newWorldDialog(defaultName: string): Promise<{ name: string; kin
     panel.body.append(
       el('label', { class: 'field' }, 'World name', input),
       el('div', { class: 'kind-list', role: 'radiogroup', 'aria-label': 'Kind of world' }, ...kinds.map((k) => k.label)),
+      warrenField,
       el('p', { class: 'muted small' }, 'The kind is chosen once, when the world is created.'),
       el(
         'div',

@@ -18,7 +18,8 @@ import { RARITIES, rollOffer, totalsOf, type PerkTotals } from './perks';
 import { makeRaider } from './raider';
 import { BOSS_TIMES, OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
 import { HAWK_ALTITUDE, makeHawk } from './hawk';
-import { MAX_STRENGTH, REPAIR_HP_PER_POINT, TIER_UNLOCKS, WEAPON_UNLOCKS, strengthPrice } from './unlocks';
+import { MAX_STRENGTH, REPAIR_HP_PER_POINT, TIER_UNLOCKS, WEAPON_UNLOCKS, reinforcePrice, strengthPrice } from './unlocks';
+import { roomFor } from './design';
 import { DEFAULT_WEAPON, WEAPONS, WEAPON_LIST, weaponScore, type WeaponClass, type WeaponDef } from './weapons';
 
 export type DefenseAction =
@@ -39,6 +40,8 @@ export type DefenseAction =
   | { type: 'loadout'; weapon: string; count: number }
   /** Buys a strength level for a material tier. */
   | { type: 'strengthen'; tier: number }
+  /** Buys a strength level for every block and the core at once (+25% hit points). */
+  | { type: 'reinforce' }
   /** Repairs damaged blocks, the most worn first, as far as the points go. */
   | { type: 'repair' };
 
@@ -64,14 +67,14 @@ export const BUDGET_STEP = 100;
 /** Block budget every wave brings, from the first wave on, and how much more each wave after. */
 export const WAVE_BUDGET = 30;
 export const WAVE_BUDGET_GROWTH = 2;
+/** How much faster rabbits grow up and breed in a round than in a wild world. */
+export const BREED_PACE = 3;
 /** Seconds between alerts that the core is under attack. */
 const CORE_ALERT_SECONDS = 20;
 /** How close (from its middle to the block's nearest face) a predator must be to gnaw the core. */
 const CORE_REACH = 0.7;
 const BUDGET_PRICE = 150;
 const BUDGET_PRICE_GROWTH = 1.18;
-/** How many rabbits a warren holds (breeding slows towards it): the colony can't grow without end. */
-export const WARREN_CAPACITY = 40;
 /** Defenders a round starts with. */
 export const START_DEFENDERS = 4;
 /** Path searches per tick in a defense round (predators plan their way in through walls). */
@@ -176,6 +179,9 @@ export class Defense implements DefenseContext {
   /** Set by the game once the round's rewards went to the player's profile. */
   rewarded: boolean;
   bosses: number;
+  /** Rabbits the warren has room for, from the ground its walls enclose (see `roomFor`). */
+  room: number;
+  readonly design: { id: string; name: string } | undefined;
   /** What the perks taken add up to. */
   private totals: PerkTotals;
   /** Weapons with perks and upgrades applied, by id (rebuilt when either changes). */
@@ -234,15 +240,22 @@ export class Defense implements DefenseContext {
     this.rerolls = state.rerolls;
     this.rewarded = state.rewarded;
     this.bosses = state.bosses;
+    this.design = state.design ? { ...state.design } : undefined;
     this.totals = totalsOf(this.perks);
     this.base.hpMultiplier = this.modifiers.blockHp;
     this.base.strength = this.strength;
     // Rounds saved before warrens had a core get one in the middle.
     if (this.outcome === 'playing' && this.base.coreCells().length === 0) this.base.placeCore(this.site.x, this.site.z);
+    this.room = state.room ?? roomFor(this.base.enclosedFloor(), this.modifiers.rabbits);
     this.combat = new Combat(eco.population, eco.solids);
     this.breeder = {
       needs: true,
-      decide: (pop, c, env) => decidePrey(pop, c, env.night, { breedBoost: this.modifiers.fertility * this.totals.fertility, home: this.home }),
+      decide: (pop, c, env) => {
+        const boost = this.modifiers.fertility * this.totals.fertility;
+        decidePrey(pop, c, env.night, { breedBoost: boost, home: this.home });
+        // Breeders in a warren raise young at night too, resting in it.
+        if (c.activity === 'rest' && pop.canBreed(c) && pop.rng.chance(pop.breedChance(c.species, boost)) && pop.mateNear(c, (o) => o.role !== 'defender')) pop.breed(c);
+      },
       interval: PREY.interval,
     };
     this.defender = makeDefender(this);
@@ -275,9 +288,11 @@ export class Defense implements DefenseContext {
   private install(): void {
     const { population: pop, solids, vegetation: veg } = this.eco;
     pop.searchBudget = { ...SEARCH_BUDGET };
-    // Rabbits in a warren live on grass alone: no water needed.
+    // Rabbits in a warren live on grass alone: no water needed. They grow up and breed faster than
+    // wild ones, so a warren fills the room it has within a round.
     pop.needsWater = false;
-    pop.caps = { prey: WARREN_CAPACITY + this.modifiers.rabbits };
+    pop.breedPace = BREED_PACE;
+    pop.caps = { prey: this.room };
     pop.behaviourFor = (c) => (c.species === 'predator' ? (defOf(c).abilities.flier ? this.hawk : this.raider) : c.role === 'defender' ? this.defender : this.breeder);
     pop.onDeath = (c, info) => this.onDeath(c, info);
     solids.setBase(this.base);
@@ -536,8 +551,8 @@ export class Defense implements DefenseContext {
   /** Keeps the number of defenders at the allocation, preferring rabbits that already defend. */
   private assignRoles(): void {
     const rabbits = this.eco.population.creatures.filter((c) => c.species === 'prey' && c.deadFor < 0);
-    const maturity = KINDS.rabbit.maturity;
-    const eligible = (c: Creature) => c.age >= maturity && c.health > 0.35;
+    const pop = this.eco.population;
+    const eligible = (c: Creature) => c.age >= pop.maturityOf(c) && c.health > 0.35;
     let changed = false;
     const setRole = (c: Creature, role: 'breeder' | 'defender') => {
       if (c.role === role) return;
@@ -601,9 +616,23 @@ export class Defense implements DefenseContext {
 
   /** Applies a player's (or bot's) decision. Never throws; reports why when it can't. */
   apply(action: DefenseAction): ActionResult {
+    const shape = this.base.shape;
     const r = this.applyNow(action);
     if (r.ok) this.recorder?.(this.tickIndex, structuredClone(action));
+    // Room follows the warren as the player builds it (predators breaking walls don't shrink it).
+    if (this.base.shape !== shape) this.updateRoom();
     return r;
+  }
+
+  private updateRoom(): void {
+    this.room = roomFor(this.base.enclosedFloor(), this.modifiers.rabbits);
+    this.eco.population.caps = { ...this.eco.population.caps, prey: this.room };
+  }
+
+  /** Points for the next reinforcement of the whole warren (Infinity when it is as strong as it gets). */
+  get reinforcePrice(): number {
+    const level = this.base.reinforced;
+    return level >= MAX_STRENGTH ? Infinity : reinforcePrice(level);
   }
 
   private applyNow(action: DefenseAction): ActionResult {
@@ -687,6 +716,16 @@ export class Defense implements DefenseContext {
         if (this.points < price) return { ok: false, reason: `Needs ${price} points.` };
         this.points -= price;
         this.strength[t]++;
+        this.base.version++;
+        return { ok: true };
+      }
+      case 'reinforce': {
+        const price = this.reinforcePrice;
+        if (!Number.isFinite(price)) return { ok: false, reason: 'The warren is as strong as it gets.' };
+        if (this.points < price) return { ok: false, reason: `Needs ${price} points.` };
+        this.points -= price;
+        const level = this.base.reinforced + 1;
+        for (let t = 0; t < this.strength.length; t++) this.strength[t] = Math.max(this.strength[t], level);
         this.base.version++;
         return { ok: true };
       }
@@ -902,11 +941,17 @@ export class Defense implements DefenseContext {
   }
 
   chew(c: Creature, x: number, y: number, z: number, amount: number): void {
-    if (this.base.damage(x, y, z, amount) === 'broken') this.stats.blocksBroken++;
+    this.hit(x, y, z, amount);
     // Bears smash: the blocks beside the one they break crack too.
     const smash = defOf(c).abilities.smash ?? 0;
     if (smash <= 0) return;
-    for (const [dx, dy, dz] of SMASH_NEIGHBOURS) if (this.base.damage(x + dx, y + dy, z + dz, amount * smash) === 'broken') this.stats.blocksBroken++;
+    for (const [dx, dy, dz] of SMASH_NEIGHBOURS) this.hit(x + dx, y + dy, z + dz, amount * smash);
+  }
+
+  /** Damages a block; the core takes no harm while any breeder is alive (breeders first). */
+  private hit(x: number, y: number, z: number, amount: number): void {
+    if (this.base.materialAt(x, y, z) === CORE && this.breedersLeft()) return;
+    if (this.base.damage(x, y, z, amount) === 'broken') this.stats.blocksBroken++;
   }
 
   biteMult(): number {
@@ -943,6 +988,8 @@ export class Defense implements DefenseContext {
       rerolls: this.rerolls,
       rewarded: this.rewarded,
       bosses: this.bosses,
+      room: this.room,
+      ...(this.design ? { design: { ...this.design } } : {}),
     };
   }
 }

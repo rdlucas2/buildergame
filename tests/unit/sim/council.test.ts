@@ -118,7 +118,7 @@ describe('upgrades in a round', () => {
     expect(d.mainWeapon).toBe('crossbow');
     expect(d.budget).toBe(800);
     expect(e.population.count('prey')).toBe(17);
-    expect(e.population.capOf('prey')).toBe(43);
+    expect(e.population.capOf('prey')).toBe(44);
     e.advance(90);
     expect(d.offers[0]).toHaveLength(4);
     const before = JSON.stringify(d.offers[0]);

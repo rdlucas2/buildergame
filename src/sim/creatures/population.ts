@@ -60,6 +60,16 @@ export class Population {
   behaviourFor: (c: Creature) => Behaviour = (c) => (c.species === 'prey' ? PREY : WOLF);
   /** Whether creatures get thirsty (a Warren Defense round turns it off: rabbits live on grass). */
   needsWater = true;
+  /**
+   * How much faster than in a wild world creatures grow up and breed again (a Warren Defense round
+   * speeds rabbits up, so a warren can fill the room it has within a round). Lifespans don't change.
+   */
+  breedPace = 1;
+
+  /** Age at which a creature is grown (it can breed, and a rabbit can defend). */
+  maturityOf(c: Creature): number {
+    return defOf(c).maturity / this.breedPace;
+  }
   /** Population limits that replace the species' own (a game mode's carrying capacity). */
   caps: Partial<Record<CreatureSpecies, number>> = {};
   /** Called when a creature dies (after its tally is counted). */
@@ -129,7 +139,7 @@ export class Population {
         age: def.maturity * this.rng.range(1.1, 3),
         satiety: this.rng.range(0.7, 0.95),
         hydration: this.rng.range(0.7, 0.95),
-        cooldown: this.rng.range(0, def.breedCooldown * 0.6),
+        cooldown: this.rng.range(0, (def.breedCooldown * 0.6) / this.breedPace),
       };
       if (kind) this.spawnKind(kind, x, y, z, init);
       else this.spawn(species, x, y, z, init);
@@ -467,8 +477,7 @@ export class Population {
   }
 
   canBreed(c: Creature): boolean {
-    const def = defOf(c);
-    if (!(c.age >= def.maturity && c.cooldown <= 0 && c.satiety > 0.7 && c.hydration > 0.6 && c.health > 0.8 && this.count(c.species) < this.capOf(c.species))) return false;
+    if (!(c.age >= this.maturityOf(c) && c.cooldown <= 0 && c.satiety > 0.7 && c.hydration > 0.6 && c.health > 0.8 && this.count(c.species) < this.capOf(c.species))) return false;
     // Wolves raise young only while prey is plentiful, so a pack doesn't outgrow its food.
     return c.species === 'prey' || this.count('prey') >= PREY_PER_WOLF * (this.count('predator') + 1);
   }
@@ -487,7 +496,7 @@ export class Population {
   mateNear(c: Creature, accept?: (o: Creature) => boolean): boolean {
     const def = defOf(c);
     for (const o of this.creatures) {
-      if (o === c || o.deadFor >= 0 || o.species !== c.species || o.age < def.maturity) continue;
+      if (o === c || o.deadFor >= 0 || o.species !== c.species || o.age < def.maturity / this.breedPace) continue;
       if (accept && !accept(o)) continue;
       if (Math.abs(o.x - c.x) <= MATE_RADIUS && Math.abs(o.z - c.z) <= MATE_RADIUS && Math.abs(o.y - c.y) <= 2) return true;
     }
@@ -515,7 +524,7 @@ export class Population {
     }
     if (young.length > 0) {
       this.tally.born += young.length;
-      c.cooldown = def.breedCooldown;
+      c.cooldown = def.breedCooldown / this.breedPace;
       c.satiety = Math.max(0, c.satiety - 0.25);
     }
     return young;

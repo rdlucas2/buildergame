@@ -5,6 +5,7 @@ import { DAY_SECONDS, START_TIME, TICK_SECONDS, daylight } from './clock';
 import { Population, SPECIES, type Tally } from './creatures';
 import { Defense } from './defense/defense';
 import { buildStarterWarren, chooseWarrenSite, createBase } from './defense/starter';
+import { placePlan, planSize, type WarrenPlan } from './defense/design';
 import { Navigator } from './navigation';
 import { Rng, hash3 } from './rng';
 import { SafetyMap } from './safety';
@@ -85,7 +86,7 @@ export class Ecosystem {
    * `defense`, it is a Warren Defense round instead: the herd starts inside a walled warren and
    * waves of predators come for it.
    */
-  static create(size: number, seed: number, opts: { defense?: Partial<DefenseModifiers> } = {}): Ecosystem {
+  static create(size: number, seed: number, opts: { defense?: Partial<DefenseModifiers>; warren?: WarrenPlan; design?: { id: string; name: string } } = {}): Ecosystem {
     if (!opts.defense) {
       const e = new Ecosystem(size, { seed, time: START_TIME });
       e.spawnStarterHerd();
@@ -93,11 +94,23 @@ export class Ecosystem {
     }
     const e = new Ecosystem(size, { seed, time: START_TIME, creatures: [] });
     const modifiers = { ...NO_MODIFIERS, ...opts.defense };
-    const site = chooseWarrenSite(e.terrain);
+    const plan = opts.warren;
+    if (!plan) {
+      const site = chooseWarrenSite(e.terrain);
+      const base = createBase(site);
+      buildStarterWarren(base, site);
+      e.defense = new Defense(e, Defense.initialState(site, base, modifiers));
+      e.population.spawnGroup('prey', site.x, site.z, STARTER_HERD + modifiers.rabbits, 5);
+      return e;
+    }
+    // A warren from the builder: centred on dry ground, the herd starting around its core.
+    const extent = planSize(plan);
+    const site = chooseWarrenSite(e.terrain, Math.ceil(Math.max(extent.x, extent.z) / 2));
     const base = createBase(site);
-    buildStarterWarren(base, site);
-    e.defense = new Defense(e, Defense.initialState(site, base, modifiers));
-    e.population.spawnGroup('prey', site.x, site.z, STARTER_HERD + modifiers.rabbits, 5);
+    placePlan(base, plan, site);
+    e.defense = new Defense(e, { ...Defense.initialState(site, base, modifiers), ...(opts.design ? { design: { ...opts.design } } : {}) });
+    const core = e.defense.coreSpot() ?? site;
+    e.population.spawnGroup('prey', Math.floor(core.x), Math.floor(core.z), STARTER_HERD + modifiers.rabbits, 4);
     return e;
   }
 

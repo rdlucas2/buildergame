@@ -1,6 +1,6 @@
 import type { BaseState } from '../../core/defense-state';
 import { AIR, VoxelGrid, type Size3 } from '../../core/voxel-grid';
-import { CORE, blockCost, blockHp } from './materials';
+import { CORE, STRENGTH_PER_LEVEL, blockCost, blockHp } from './materials';
 
 /** Size of the area a warren can be built in, centred on the base site. */
 export const BASE_SIZE: Size3 = { x: 48, y: 16, z: 48 };
@@ -41,6 +41,7 @@ export class DefenseBase {
   coreDamage = 0;
   private costCache = -1;
   private coreCache: { version: number; cells: Array<{ x: number; y: number; z: number }> } | null = null;
+  private enclosedCache: { version: number; cells: number } | null = null;
   private postsCache: { version: number; posts: Array<{ x: number; y: number; z: number }> } | null = null;
   private footprintCache: { version: number; area: { x0: number; z0: number; x1: number; z1: number } | null } | null = null;
 
@@ -108,9 +109,57 @@ export class DefenseBase {
 
   // ---- the core ----------------------------------------------------------------------------
 
-  /** Hit points of the whole core. */
+  /** Hit points of the whole core: tougher with the block upgrades, and with every reinforcement. */
   get coreMaxHp(): number {
-    return Math.round(CORE_HP * this.hpMultiplier);
+    return Math.round(CORE_HP * this.hpMultiplier * (1 + STRENGTH_PER_LEVEL * this.reinforced));
+  }
+
+  /** Reinforcements bought for the whole warren: the lowest strength level of any tier. */
+  get reinforced(): number {
+    return this.strength.length ? Math.min(...this.strength) : 0;
+  }
+
+  /**
+   * Open ground inside the warren: cells a predator 2 blocks tall can't walk to from outside without
+   * breaking in (a 1-high rabbit gap doesn't let it through). This is the room the rabbits have.
+   */
+  enclosedFloor(): number {
+    if (this.enclosedCache && this.enclosedCache.version === this.shape) return this.enclosedCache.cells;
+    const { x: sx, z: sz } = this.grid.size;
+    // The grid plus a ring of open ground around it, where the search starts.
+    const w = sx + 2;
+    const h = sz + 2;
+    const blocked = (lx: number, lz: number) => lx >= 0 && lz >= 0 && lx < sx && lz < sz && (this.grid.get(lx, 0, lz) !== AIR || this.grid.get(lx, 1, lz) !== AIR);
+    const seen = new Uint8Array(w * h);
+    const queue: number[] = [];
+    for (let i = 0; i < w; i++)
+      for (const j of [0, h - 1]) {
+        queue.push(i + j * w);
+        seen[i + j * w] = 1;
+      }
+    for (let j = 1; j < h - 1; j++)
+      for (const i of [0, w - 1]) {
+        queue.push(i + j * w);
+        seen[i + j * w] = 1;
+      }
+    while (queue.length > 0) {
+      const k = queue.pop()!;
+      const i = k % w;
+      const j = Math.floor(k / w);
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di;
+        const nj = j + dj;
+        if (ni < 0 || nj < 0 || ni >= w || nj >= h) continue;
+        const nk = ni + nj * w;
+        if (seen[nk] || blocked(ni - 1, nj - 1)) continue;
+        seen[nk] = 1;
+        queue.push(nk);
+      }
+    }
+    let cells = 0;
+    for (let lz = 0; lz < sz; lz++) for (let lx = 0; lx < sx; lx++) if (!seen[lx + 1 + (lz + 1) * w] && this.grid.get(lx, 0, lz) === AIR) cells++;
+    this.enclosedCache = { version: this.shape, cells };
+    return cells;
   }
 
   /** Hit points the core has left (0 once it has fallen, or when there is none). */

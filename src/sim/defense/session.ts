@@ -4,7 +4,8 @@ import { kindOf } from '../creatures';
 import type { Ecosystem } from '../ecosystem';
 import { progressOf } from './criteria';
 import type { ActionResult, Defense, DefenseAction } from './defense';
-import { TIERS } from './materials';
+import { expansion } from './advisor';
+import { TIERS, blockCost } from './materials';
 import { DEFENSE_GROUND, startRound } from './replay';
 import { WEAPON_UNLOCKS } from './unlocks';
 import { WEAPON_LIST } from './weapons';
@@ -61,6 +62,13 @@ export interface DefenseObservation {
   coreMax: number;
   /** Block budget the next wave brings. */
   waveBudget: number;
+  /** Rabbits the warren has room for (it grows with the ground the walls enclose). */
+  room: number;
+  /** Reinforcements bought for the whole warren, and the price of the next (Infinity at the most). */
+  reinforced: number;
+  reinforcePrice: number;
+  /** Block budget a new ring of walls around the warren would take (null when there's no room for one). */
+  expansionCost: number | null;
 }
 
 /**
@@ -122,7 +130,7 @@ export function observeRound(eco: Ecosystem): DefenseObservation {
     }
     rabbits++;
     if (c.role === 'defender') defenders++;
-    if (c.age < 480) young++;
+    if (c.age < pop.maturityOf(c)) young++;
   }
   return {
     clock: Math.round(d.clock * 10) / 10,
@@ -162,5 +170,15 @@ export function observeRound(eco: Ecosystem): DefenseObservation {
     coreHp: Math.ceil(d.base.coreHp),
     coreMax: d.base.coreMaxHp,
     waveBudget: d.waveBudget,
+    room: d.room,
+    reinforced: d.base.reinforced,
+    reinforcePrice: d.reinforcePrice,
+    expansionCost: expansionCost(d),
   };
+}
+
+/** Block budget the next ring of walls would take, or null when there is no room for one. */
+function expansionCost(d: Defense): number | null {
+  const ring = expansion(d);
+  return ring ? ring.reduce((s, b) => s + blockCost(b.material), 0) : null;
 }

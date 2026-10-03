@@ -128,6 +128,8 @@ const DefenseSchema = z.object({
   rerolls: count.default(0),
   rewarded: z.boolean().default(false),
   bosses: count.default(0),
+  room: count.optional(),
+  design: z.object({ id: z.string().min(1).max(128), name: z.string().max(200) }).optional(),
 });
 
 export const WorldFileSchema = z.object({
@@ -286,6 +288,8 @@ function encodeDefense(d: DefenseState): DefenseFile {
     rerolls: d.rerolls,
     rewarded: d.rewarded,
     bosses: d.bosses,
+    ...(d.room !== undefined ? { room: d.room } : {}),
+    ...(d.design ? { design: { ...d.design } } : {}),
   };
 }
 
@@ -330,6 +334,8 @@ function decodeDefense(f: DefenseFile): DefenseState {
     rerolls: f.rerolls,
     rewarded: f.rewarded,
     bosses: f.bosses,
+    ...(f.room !== undefined ? { room: f.room } : {}),
+    ...(f.design ? { design: { ...f.design } } : {}),
   };
 }
 

@@ -86,9 +86,14 @@ function decideRaider(ctx: DefenseContext, pop: Population, c: Creature): void {
 
 function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number): boolean {
   const def = defOf(c);
-  // At the core with no breeders left: gnaw it.
+  // At the core with no breeders left: gnaw it. A breeder again (a defender stood down): go for it.
   if (c.target === -1 && c.activity !== 'bite') {
     const b = ctx.coreNear(c);
+    if (b && ctx.breedersLeft()) {
+      c.think = 0;
+      if (c.activity === 'breach') c.activity = 'raid';
+      return true;
+    }
     if (b) {
       c.activity = 'breach';
       c.path = [];

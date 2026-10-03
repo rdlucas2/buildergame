@@ -1,9 +1,9 @@
 import type { PerkCard } from '../core/defense-state';
+import { EXPANSION_GAP, expansionPlan } from '../sim/defense/advisor';
 import { describe, progressOf } from '../sim/defense/criteria';
 import type { ActionResult, Defense, DefenseAction } from '../sim/defense/defense';
-import { STRENGTH_PER_LEVEL, TIERS } from '../sim/defense/materials';
 import { RARITY_COLORS, describePerk, perkName } from '../sim/defense/perks';
-import { MAX_STRENGTH, TIER_UNLOCKS, WEAPON_UNLOCKS } from '../sim/defense/unlocks';
+import { MAX_STRENGTH, WEAPON_UNLOCKS } from '../sim/defense/unlocks';
 import { CLASS_NAMES, WEAPON_LIST, dps } from '../sim/defense/weapons';
 import { el } from './dom';
 import { closePanel, openPanel, type PanelHandle } from './panel';
@@ -26,18 +26,61 @@ function refuse(r: ActionResult): boolean {
 }
 
 /**
- * The Armory: every weapon (what unlocks the locked ones, and for unlocked ones the main weapon and
- * how many defenders carry each other one), the strength of each block tier, and the perks taken.
+ * The Shop: everything points buy, in one place. The warren (more block budget, a new ring of walls
+ * for more rabbits, repairs, and reinforcing every block and the core), then the weapons (defenders always carry the best one
+ * unlocked; locked ones show what unlocks them) and the perks taken.
  */
-export function openArmory(d: Defense, apply: Apply): PanelHandle {
-  const panel = openPanel('Armory', { wide: true, id: 'armory' });
+export function openShop(d: Defense, apply: Apply): PanelHandle {
+  const panel = openPanel('Shop', { wide: true, id: 'shop' });
   const render = () => {
+    const core = d.base.coreMaxHp ? `❤ ${Math.ceil(d.base.coreHp)}/${d.base.coreMaxHp}` : '';
+    const damaged = d.base.damaged().length;
+    const level = d.base.reinforced;
+    const reinforce = d.reinforcePrice;
+    const ring = expansionPlan(d);
+    const free = d.budget - d.base.cost();
     panel.body.replaceChildren(
-      el('p', { class: 'muted small' }, `★ ${d.points} to spend. Defenders carry the main weapon unless you give some of them another.`),
+      el('p', { class: 'muted small', id: 'shop-points' }, `★ ${d.points} to spend · ▣ ${d.base.cost()}/${d.budget} block budget. The round is paused while you shop.`),
+      el('h3', {}, 'Warren'),
+      el(
+        'div',
+        { class: 'armory-list' },
+        item('shop-budget', 'More block budget', `+100 budget to build with (every wave adds ${d.waveBudget} too).`, `Buy (${d.budgetPrice}★)`, d.points >= d.budgetPrice, () => act({ type: 'buyBudget' })),
+        item(
+          'shop-expand',
+          'Expand the warren',
+          ring
+            ? `A new ring of stone walls ${EXPANSION_GAP} blocks out, with ${ring.posts} lookout posts on top and a rabbit gap in each side: room for ${ring.room} rabbits (${d.room} now), and posts for more defenders. Uses ▣ ${ring.cost} of the block budget (${free} left).`
+            : `The warren has room for ${d.room} rabbits, as many as it can: there is no space for another ring.`,
+          ring ? `Build (▣ ${ring.cost})` : 'Full size',
+          ring !== null && free >= ring.cost,
+          () => {
+            if (ring && refuse(apply(ring.action))) {
+              toast(`The warren has room for ${d.room} rabbits now.`, 'success', 2500);
+              render();
+            }
+          },
+        ),
+        item(
+          'shop-repair',
+          'Repair everything',
+          damaged ? `Mends the most worn blocks first${d.base.coreDamage > 0 ? `, and the core (${core})` : ''}: ${damaged} damaged.` : 'Nothing is damaged.',
+          damaged ? `Repair (${d.repairPrice}★)` : 'Repair',
+          damaged > 0 && d.points >= 1,
+          () => act({ type: 'repair' }),
+        ),
+        item(
+          'shop-reinforce',
+          'Reinforce the warren',
+          `Every block and the core gets +25% hit points. Level ${level}/${MAX_STRENGTH}.`,
+          Number.isFinite(reinforce) ? `Reinforce (${reinforce}★)` : 'Fully reinforced',
+          Number.isFinite(reinforce) && d.points >= reinforce,
+          () => act({ type: 'reinforce' }),
+        ),
+      ),
       el('h3', {}, 'Weapons'),
+      el('p', { class: 'muted small' }, 'Defenders always carry the best weapon unlocked. New ones unlock as the round goes on.'),
       el('div', { class: 'armory-list' }, ...WEAPON_LIST.map((w) => weaponRow(w.id))),
-      el('h3', {}, 'Blocks'),
-      el('div', { class: 'armory-list' }, ...TIERS.map((_, t) => tierRow(t))),
       el('h3', {}, `Perks (${d.perks.length})`),
       d.perks.length === 0
         ? el('p', { class: 'muted small' }, 'A perk is offered every wave from the second, and a rare one every 5 minutes survived.')
@@ -47,6 +90,14 @@ export function openArmory(d: Defense, apply: Apply): PanelHandle {
   const act = (action: DefenseAction) => {
     if (refuse(apply(action))) render();
   };
+  const item = (id: string, name: string, text: string, label: string, enabled: boolean, onBuy: () => void): HTMLElement =>
+    el(
+      'div',
+      { class: 'armory-row shop-item', id },
+      el('div', { class: 'armory-name' }, name),
+      el('div', { class: 'armory-info small' }, text),
+      el('div', { class: 'armory-actions' }, el('button', { class: 'btn small shop-buy', onclick: onBuy, disabled: !enabled }, label)),
+    );
 
   const weaponRow = (id: string): HTMLElement => {
     const base = WEAPON_LIST.find((w) => w.id === id)!;
@@ -61,8 +112,6 @@ export function openArmory(d: Defense, apply: Apply): PanelHandle {
       return row;
     }
     const w = d.effectiveWeapon(id);
-    const main = d.mainWeapon === id;
-    const carried = d.loadout[id] ?? 0;
     const extras: string[] = [];
     if ((w.pellets ?? 1) > 1) extras.push(`${w.pellets} shots`);
     if (w.pierce) extras.push(`pierces ${w.pierce}`);
@@ -73,50 +122,9 @@ export function openArmory(d: Defense, apply: Apply): PanelHandle {
       el(
         'div',
         { class: 'armory-info small' },
-        `${one(w.damage)} damage · range ${one(w.range)} · ${one(1 / w.cooldown)} ${1 / w.cooldown === 1 ? 'shot' : 'shots'} a second · ${one(dps(w))} damage a second${extras.length ? ` · ${extras.join(', ')}` : ''}`,
+        `${one(w.damage)} damage · range ${one(w.range)} · ${one(dps(w))} damage a second${extras.length ? ` · ${extras.join(', ')}` : ''}`,
       ),
-      el(
-        'div',
-        { class: 'armory-actions' },
-        main
-          ? el('span', { class: 'tag armory-main-tag' }, 'Main')
-          : el('button', { class: 'btn small armory-main', onclick: () => act({ type: 'equip', weapon: id }) }, 'Make main'),
-        main
-          ? el('span')
-          : el(
-              'span',
-              { class: 'def-group' },
-              el('button', { class: 'btn small armory-fewer', onclick: () => act({ type: 'loadout', weapon: id, count: carried - 1 }), disabled: carried === 0 }, '−'),
-              el('span', { class: 'armory-count', title: 'Defenders carrying it' }, String(carried)),
-              el('button', { class: 'btn small armory-more', onclick: () => act({ type: 'loadout', weapon: id, count: carried + 1 }) }, '+'),
-            ),
-      ),
-    );
-    return row;
-  };
-
-  const tierRow = (t: number): HTMLElement => {
-    const tier = TIERS[t];
-    const level = d.strength[t] ?? 0;
-    const row = el('div', { class: 'armory-row armory-tier', 'data-tier': String(t) });
-    if (t >= d.tiers) {
-      const c = TIER_UNLOCKS[t]!;
-      row.classList.add('locked');
-      row.append(el('div', { class: 'armory-name' }, `🔒 ${tier.name}`), el('div', { class: 'armory-info' }, el('div', { class: 'small' }, describe(c)), meter(progressOf(c, d.progress))));
-      return row;
-    }
-    const hp = Math.round(tier.hp * (1 + STRENGTH_PER_LEVEL * level) * d.modifiers.blockHp);
-    const price = d.strengthPrice(t);
-    row.append(
-      el('div', { class: 'armory-name' }, tier.name, el('div', { class: 'muted small' }, `costs ${tier.cost} budget a block`)),
-      el('div', { class: 'armory-info small' }, `${hp} hit points a block · strength ${level}/${MAX_STRENGTH}`),
-      el(
-        'div',
-        { class: 'armory-actions' },
-        Number.isFinite(price)
-          ? el('button', { class: 'btn small armory-strengthen', onclick: () => act({ type: 'strengthen', tier: t }), disabled: d.points < price }, `Strengthen (${price}★)`)
-          : el('span', { class: 'tag' }, 'Full strength'),
-      ),
+      el('div', { class: 'armory-actions' }, d.mainWeapon === id ? el('span', { class: 'tag armory-main-tag' }, 'Carried') : el('span')),
     );
     return row;
   };
