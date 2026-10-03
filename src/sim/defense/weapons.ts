@@ -58,12 +58,15 @@ export const WEAPONS: Readonly<Record<string, WeaponDef>> = Object.fromEntries(W
 
 export const DEFAULT_WEAPON = 'slingshot';
 
-/** Position in the weapon list (higher is stronger); -1 for an unknown id. */
-export function weaponRank(id: string): number {
-  return WEAPON_LIST.findIndex((w) => w.id === id);
-}
-
 /** Damage per second of one defender with this weapon (before misses and modifiers). */
 export function dps(w: WeaponDef): number {
   return (w.damage * (w.pellets ?? 1)) / w.cooldown;
+}
+
+/**
+ * A rough worth for comparing weapons: damage per second, more for shots that pass through or burst
+ * among several predators (waves come in crowds).
+ */
+export function weaponScore(w: WeaponDef): number {
+  return dps(w) * (1 + 0.4 * (w.pierce ?? 0)) * (1 + 0.5 * (w.splash ?? 0));
 }

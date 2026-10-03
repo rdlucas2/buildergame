@@ -192,6 +192,46 @@ test('the round summary shows when the warren falls, and a new round starts fres
   expect(fresh.wave).toBe(0);
 });
 
+test('a lost round pays Clover, and a Warren Council upgrade carries over to the next round', async ({ page }) => {
+  const errors = await boot(page);
+  await defenseWorld(page, 'Council');
+  expect((await page.evaluate(() => window.__game!.profile())).clover).toBe(0);
+  await page.evaluate(() => window.__game!.defenseApply({ type: 'allocate', defenders: 0 }));
+  for (let i = 0; i < 40 && (await info(page)).outcome === 'playing'; i++) await advance(page, 30);
+  await frames(page, 4);
+  const summary = page.locator('#round-summary');
+  await expect(summary.locator('#round-reward')).toContainText('Clover');
+  await expect(summary.locator('#round-achievements')).toContainText('Founding');
+  const profile = await page.evaluate(() => window.__game!.profile());
+  expect(profile.clover).toBeGreaterThanOrEqual(12);
+  expect(profile.stats.rounds).toBe(1);
+  expect(profile.achievements['first-round']).toBeTruthy();
+  await page.screenshot({ path: `${SHOTS}/defense-round-reward.png` });
+
+  // The Council: buy a level of Stockpile (more starting budget).
+  await summary.locator('#round-council').click();
+  const council = page.locator('#council');
+  await expect(council).toBeVisible();
+  await expect(council.locator('.council-achievement[data-achievement="first-round"]')).toContainText('Earned');
+  await council.locator('.council-upgrade[data-upgrade="budget"] .council-buy').click();
+  await expect(council.locator('.council-upgrade[data-upgrade="budget"]')).toContainText('level 1/8');
+  await page.screenshot({ path: `${SHOTS}/defense-council.png` });
+  await page.keyboard.press('Escape');
+
+  // It is saved, and the next round starts with it.
+  await page.reload();
+  await page.waitForSelector('body[data-ready="true"]');
+  await page.evaluate(() => window.__game!.ecoSpeed(0));
+  expect((await page.evaluate(() => window.__game!.profile())).upgrades.budget).toBe(1);
+  await page.evaluate(() => window.__game!.restartRound(7));
+  const fresh = await info(page);
+  expect(fresh.outcome).toBe('playing');
+  expect(fresh.budget).toBe(750);
+  // A reload doesn't pay the old round again.
+  expect((await page.evaluate(() => window.__game!.profile())).stats.rounds).toBe(1);
+  expect(errors).toEqual([]);
+});
+
 test('a defense world keeps its warren and round across a reload', async ({ page }) => {
   await boot(page);
   await defenseWorld(page, 'Keep');

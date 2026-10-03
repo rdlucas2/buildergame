@@ -14,11 +14,11 @@ import type { DefenseContext } from './context';
 import { makeDefender } from './defender';
 import { met, type Progress } from './criteria';
 import { TIERS, blockCost, tierOf } from './materials';
-import { rollOffer, totalsOf, type PerkTotals } from './perks';
+import { RARITIES, rollOffer, totalsOf, type PerkTotals } from './perks';
 import { makeRaider } from './raider';
 import { OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
 import { MAX_STRENGTH, REPAIR_HP_PER_POINT, TIER_UNLOCKS, WEAPON_UNLOCKS, strengthPrice } from './unlocks';
-import { DEFAULT_WEAPON, WEAPONS, WEAPON_LIST, weaponRank, type WeaponClass, type WeaponDef } from './weapons';
+import { DEFAULT_WEAPON, WEAPONS, WEAPON_LIST, weaponScore, type WeaponClass, type WeaponDef } from './weapons';
 
 export type DefenseAction =
   | { type: 'allocate'; defenders: number }
@@ -30,6 +30,8 @@ export type DefenseAction =
   | { type: 'remove'; x: number; y: number; z: number }
   /** Takes card `index` (0–2) of the oldest perk offer. */
   | { type: 'pickPerk'; index: number }
+  /** Deals the oldest perk offer again (uses one of the round's rerolls). */
+  | { type: 'reroll' }
   /** The weapon defenders carry unless the loadout gives them another. */
   | { type: 'equip'; weapon: string }
   /** How many defenders carry `weapon` instead of the main weapon. */
@@ -76,12 +78,28 @@ const PERK_SALT = 0x9e4c;
 export const MILESTONE_SECONDS = 300;
 
 export function emptyStats(): DefenseStats {
-  return { kills: 0, killsWith: {}, killsOf: {}, rabbitsLost: 0, blocksBroken: 0, shots: 0 };
+  return { kills: 0, killsWith: {}, killsOf: {}, rabbitsLost: 0, blocksBroken: 0, shots: 0, firstLoss: -1 };
 }
 
-/** The in-round progression of a fresh round: the slingshot, soft to stone blocks, no perks. */
-export function emptyProgression(): Pick<DefenseState, 'unlocked' | 'mainWeapon' | 'loadout' | 'tiers' | 'strength' | 'perks' | 'offers' | 'offersMade' | 'milestones'> {
-  return { unlocked: [DEFAULT_WEAPON], mainWeapon: DEFAULT_WEAPON, loadout: {}, tiers: 3, strength: [0, 0, 0, 0, 0], perks: [], offers: [], offersMade: 0, milestones: 0 };
+/**
+ * The in-round progression a round starts with: the slingshot (and any weapons the starting-weapon
+ * upgrade adds), soft to stone blocks, no perks, and the rerolls upgrades give.
+ */
+export function emptyProgression(modifiers: DefenseModifiers = NO_MODIFIERS): Pick<DefenseState, 'unlocked' | 'mainWeapon' | 'loadout' | 'tiers' | 'strength' | 'perks' | 'offers' | 'offersMade' | 'milestones' | 'rerolls' | 'rewarded'> {
+  const unlocked = WEAPON_LIST.slice(0, 1 + Math.max(0, Math.min(WEAPON_LIST.length - 1, modifiers.startWeapon))).map((w) => w.id);
+  return {
+    unlocked,
+    mainWeapon: unlocked[unlocked.length - 1],
+    loadout: {},
+    tiers: 3,
+    strength: [0, 0, 0, 0, 0],
+    perks: [],
+    offers: [],
+    offersMade: 0,
+    milestones: 0,
+    rerolls: modifiers.rerolls,
+    rewarded: false,
+  };
 }
 
 /**
@@ -114,6 +132,9 @@ export class Defense implements DefenseContext {
   offers: PerkCard[][];
   offersMade: number;
   milestones: number;
+  rerolls: number;
+  /** Set by the game once the round's rewards went to the player's profile. */
+  rewarded: boolean;
   /** What the perks taken add up to. */
   private totals: PerkTotals;
   /** Weapons with perks and upgrades applied, by id (rebuilt when either changes). */
@@ -163,6 +184,8 @@ export class Defense implements DefenseContext {
     this.offers = state.offers.map((o) => o.map((p) => ({ ...p })));
     this.offersMade = state.offersMade;
     this.milestones = state.milestones;
+    this.rerolls = state.rerolls;
+    this.rewarded = state.rewarded;
     this.totals = totalsOf(this.perks);
     this.base.hpMultiplier = this.modifiers.blockHp;
     this.base.strength = this.strength;
@@ -194,7 +217,7 @@ export class Defense implements DefenseContext {
       stats: emptyStats(),
       outcome: 'playing',
       modifiers: { ...modifiers },
-      ...emptyProgression(),
+      ...emptyProgression(modifiers),
     };
   }
 
@@ -288,8 +311,9 @@ export class Defense implements DefenseContext {
       const c = WEAPON_UNLOCKS[w.id];
       if (c && !met(c, p)) continue;
       this.unlocked.push(w.id);
-      // Defenders take up the new weapon when it beats the one they carry.
-      if (weaponRank(w.id) > weaponRank(this.mainWeapon)) this.mainWeapon = w.id;
+      // Defenders take up the new weapon when it beats the one they carry, perks included (so a
+      // well-boosted cannon isn't dropped for a fresh laser).
+      if (weaponScore(this.effectiveWeapon(w.id)) > weaponScore(this.effectiveWeapon(this.mainWeapon))) this.mainWeapon = w.id;
       this.events.push({ kind: 'unlock', weapon: w.id });
       this.armDefenders();
     }
@@ -309,13 +333,17 @@ export class Defense implements DefenseContext {
     }
   }
 
-  /** Deals three perk cards to choose from (seeded per offer, like waves). */
+  /** Deals perk cards to choose from (seeded per offer, like waves). */
   private offerPerks(minRarity: number): void {
+    this.offers.push(this.dealOffer(minRarity));
+    this.events.push({ kind: 'offer', pending: this.offers.length });
+  }
+
+  private dealOffer(minRarity: number): PerkCard[] {
     const rng = new Rng(hash3(this.eco.seed, PERK_SALT, this.offersMade));
     this.offersMade++;
     const classes = [...new Set(this.unlocked.map((id) => WEAPONS[id].class))];
-    this.offers.push(rollOffer(rng, this.clock, classes, WEAPONS[this.mainWeapon].class, minRarity));
-    this.events.push({ kind: 'offer', pending: this.offers.length });
+    return rollOffer(rng, this.clock, classes, WEAPONS[this.mainWeapon].class, minRarity, this.modifiers.cards);
   }
 
   /** Mends worn blocks by the perk rate over `seconds`. */
@@ -440,7 +468,9 @@ export class Defense implements DefenseContext {
       return;
     }
     this.postOf.delete(c.id);
-    if (info.cause === 'eaten') this.stats.rabbitsLost++;
+    if (info.cause !== 'eaten') return;
+    this.stats.rabbitsLost++;
+    if (this.stats.firstLoss < 0) this.stats.firstLoss = Math.round(this.clock * 10) / 10;
   }
 
   // ---- actions ------------------------------------------------------------------------------
@@ -502,6 +532,15 @@ export class Defense implements DefenseContext {
         if (card.kind === 'budget') this.budget += card.amount;
         this.totals = totalsOf(this.perks);
         this.effective.clear();
+        return { ok: true };
+      }
+      case 'reroll': {
+        if (this.offers.length === 0) return { ok: false, reason: 'No perk to redeal.' };
+        if (this.rerolls <= 0) return { ok: false, reason: 'No rerolls left this round.' };
+        // A redeal keeps the floor of the offer it replaces (milestone offers stay rare).
+        const floor = Math.min(...this.offers[0].map((c) => RARITIES.indexOf(c.rarity)));
+        this.offers[0] = this.dealOffer(Math.max(0, Math.min(2, floor)));
+        this.rerolls--;
         return { ok: true };
       }
       case 'equip': {
@@ -725,6 +764,8 @@ export class Defense implements DefenseContext {
       offers: this.offers.map((o) => o.map((p) => ({ ...p }))),
       offersMade: this.offersMade,
       milestones: this.milestones,
+      rerolls: this.rerolls,
+      rewarded: this.rewarded,
     };
   }
 }

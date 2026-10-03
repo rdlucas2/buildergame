@@ -6,6 +6,7 @@ import type { DefenseModifiers } from '../src/core/defense-state';
 import { DefenseSession, type DefenseObservation } from '../src/sim/defense/session';
 import type { DefenseAction } from '../src/sim/defense/defense';
 import { WEAPONS } from '../src/sim/defense/weapons';
+import { levelsAt, modifiersFor } from '../src/sim/defense/council';
 
 type Policy = (o: DefenseObservation, s: DefenseSession) => DefenseAction[];
 
@@ -107,14 +108,11 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-/**
- * Permanent-upgrade bonuses to test with: none, about half way, and everything bought. (The
- * Warren Council's upgrades add up to these; see the plan's power budget.)
- */
+/** Permanent upgrades to test with: none, half of every Warren Council upgrade, and all of them. */
 const PROFILES: Record<string, Partial<DefenseModifiers>> = {
   fresh: {},
-  mid: { damage: 1.6, blockHp: 1.3, armour: 0.85, budget: 150, rabbits: 3, fertility: 1.2 },
-  max: { damage: 2.5, blockHp: 1.8, armour: 0.7, budget: 400, rabbits: 8, fertility: 1.5 },
+  mid: modifiersFor(levelsAt(0.5)),
+  max: modifiersFor(levelsAt(1)),
 };
 
 const seeds = Number(arg('seeds', '8'));

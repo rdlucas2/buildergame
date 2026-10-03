@@ -12,6 +12,12 @@ export type Criterion =
   | { type: 'killsWith'; weapon: string; kills: number }
   | { type: 'killsOf'; kind: string; kills: number }
   | { type: 'waves'; waves: number }
+  /** Survive `seconds` without losing a rabbit (in a round). */
+  | { type: 'flawless'; seconds: number }
+  /** Unlock this many weapons (in a round). */
+  | { type: 'unlocks'; count: number }
+  /** Play this many rounds (over a lifetime). */
+  | { type: 'rounds'; count: number }
   | { type: 'all'; of: Criterion[] }
   | { type: 'any'; of: Criterion[] };
 
@@ -25,6 +31,10 @@ export interface Progress {
   kills: number;
   killsWith: Readonly<Record<string, number>>;
   killsOf: Readonly<Record<string, number>>;
+  /** Round time of the first rabbit lost (-1 for none); weapons unlocked; rounds played. */
+  firstLoss?: number;
+  unlocks?: number;
+  rounds?: number;
 }
 
 export const time = (seconds: number): Criterion => ({ type: 'time', seconds });
@@ -33,6 +43,9 @@ export const kills = (n: number): Criterion => ({ type: 'kills', kills: n });
 export const killsWith = (weapon: string, n: number): Criterion => ({ type: 'killsWith', weapon, kills: n });
 export const killsOf = (kind: string, n: number): Criterion => ({ type: 'killsOf', kind, kills: n });
 export const waves = (n: number): Criterion => ({ type: 'waves', waves: n });
+export const flawless = (seconds: number): Criterion => ({ type: 'flawless', seconds });
+export const unlocks = (count: number): Criterion => ({ type: 'unlocks', count });
+export const rounds = (count: number): Criterion => ({ type: 'rounds', count });
 export const all = (...of: Criterion[]): Criterion => ({ type: 'all', of });
 export const any = (...of: Criterion[]): Criterion => ({ type: 'any', of });
 
@@ -52,6 +65,15 @@ export function progressOf(c: Criterion, p: Progress): number {
       return frac(p.killsOf[c.kind] ?? 0, c.kills);
     case 'waves':
       return frac(p.waves, c.waves);
+    case 'flawless': {
+      // Time without a loss so far: up to the first loss, if there was one.
+      const loss = p.firstLoss ?? -1;
+      return frac(loss < 0 ? p.clock : Math.min(p.clock, loss), c.seconds);
+    }
+    case 'unlocks':
+      return frac(p.unlocks ?? 0, c.count);
+    case 'rounds':
+      return frac(p.rounds ?? 0, c.count);
     case 'all':
       return c.of.length === 0 ? 1 : c.of.reduce((s, x) => s + progressOf(x, p), 0) / c.of.length;
     case 'any':
@@ -91,6 +113,12 @@ export function describe(c: Criterion): string {
     }
     case 'waves':
       return `Hold out ${plural(c.waves, 'wave')}`;
+    case 'flawless':
+      return `Lose no rabbit in the first ${clockText(c.seconds)}`;
+    case 'unlocks':
+      return `Unlock ${plural(c.count, 'weapon')} in one round`;
+    case 'rounds':
+      return `Play ${plural(c.count, 'round')}`;
     case 'all':
       return joined(c.of, ' and ');
     case 'any':
