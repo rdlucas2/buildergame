@@ -12,6 +12,8 @@ const RAISE_FROM = 300;
 const ROOF_FROM = 540;
 /** Build moves taken at one decision point, besides ones that only spend points. */
 const BUILDS_PER_DECISION = 1;
+/** Options that change the warren's blocks: at most one a decision, as each changes what the others would build. */
+const BUILDS = new Set(['rebuild-breaches', 'raise-walls', 'roof-nursery', 'more-lookouts', 'expand-warren', 'reinforce-doorways']);
 
 /**
  * A persona played by plain rules: deterministic, free and offline. The CI smoke tests and the
@@ -90,8 +92,9 @@ export class HeuristicBrain implements Brain {
   }
 
   /** How much the persona wants a build option now (0 when not now). */
-  wantOf(obs: DefenseObservation, o: OptionSummary): number {
-    const kind = (o.id.startsWith('strengthen-') ? 'strengthen' : o.id) as BuildKind;
+  wantOf(view: View, o: OptionSummary): number {
+    const obs = view.obs;
+    const kind = o.id as BuildKind;
     const w = this.persona.build[kind] ?? 0;
     if (w <= 0) return 0;
     const free = obs.budget - obs.cost;
@@ -106,8 +109,9 @@ export class HeuristicBrain implements Brain {
       case 'repair':
         return obs.damaged > 0 && obs.points >= Math.min(obs.repairPrice, 40) ? w : 0;
       case 'buy-budget':
-        return free < 60 ? w : 0;
-      case 'strengthen':
+        // Savers buy budget whenever they can, towards the next expansion.
+        return free < 60 || this.saving(view) ? w : 0;
+      case 'reinforce':
         // Keep a reserve for repairs.
         return obs.points >= o.points * 2 ? w : 0;
       case 'call-wave': {
@@ -124,7 +128,9 @@ export class HeuristicBrain implements Brain {
     const { obs } = view;
     const ranked = view.options
       .filter((o) => o.id !== 'wait')
-      .map((o) => ({ o, w: this.wantOf(obs, o) }))
+      .map((o) => ({ o, w: this.wantOf(view, o) }))
+      // Saving up for an expansion: only urgent building goes ahead.
+      .filter((x) => !this.saving(view) || x.o.budget === 0 || x.o.id === 'expand-warren' || x.w >= 10)
       .filter((x) => x.w > 0)
       .sort((a, b) => b.w - a.w || a.o.id.localeCompare(b.o.id));
     const out: OptionSummary[] = [];
@@ -133,7 +139,7 @@ export class HeuristicBrain implements Brain {
     let budget = obs.budget - obs.cost;
     for (const { o } of ranked) {
       if (o.points > points || o.budget > budget) continue;
-      if (o.budget > 0 || o.id === 'call-wave') {
+      if (BUILDS.has(o.id) || o.id === 'call-wave') {
         if (builds >= BUILDS_PER_DECISION) continue;
         builds++;
       }
@@ -142,6 +148,12 @@ export class HeuristicBrain implements Brain {
       budget -= o.budget;
     }
     return out;
+  }
+
+  /** Holding block budget for the next expansion: the persona saves, and there is room to expand. */
+  saving(view: View): boolean {
+    const cost = view.obs.expansionCost;
+    return !!this.persona.saves && cost !== null && cost > view.obs.budget - view.obs.cost;
   }
 
   async council(_profile: PlayerProfile, offers: CouncilOffer[]): Promise<CouncilDecision> {

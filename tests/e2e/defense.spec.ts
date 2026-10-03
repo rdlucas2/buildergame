@@ -134,9 +134,9 @@ test('Fortify builds and breaks warren blocks within the budget', async ({ page 
   await expect(page.locator('#hud-mode')).toHaveText('Warren Defense: Masonry');
 });
 
-test('perks are picked from cards, and the Armory shows weapons, unlocks and block strength', async ({ page }) => {
+test('perks are picked from cards, and the Shop sells budget, expansion, repairs and reinforcement, pausing the round', async ({ page }) => {
   const errors = await boot(page);
-  await defenseWorld(page, 'Armoury');
+  await defenseWorld(page, 'Shop');
   await advance(page, 90);
   let d = await info(page);
   expect(d.wave).toBe(2);
@@ -144,41 +144,59 @@ test('perks are picked from cards, and the Armory shows weapons, unlocks and blo
   await frames(page);
   await expect(page.locator('#def-perk')).toBeVisible();
 
-  // K opens the offer: three cards, pick one.
+  // K opens the offer: three cards, pick one. The round waits while the cards are up.
+  await page.evaluate(() => window.__game!.ecoSpeed(2));
   await page.keyboard.press('KeyK');
   const offer = page.locator('#perk-offer');
   await expect(offer).toBeVisible();
+  expect((await page.evaluate(() => window.__game!.eco()!)).speed).toBe(0);
   await expect(offer.locator('.perk-card')).toHaveCount(3);
   await page.screenshot({ path: `${SHOTS}/defense-perk-offer.png` });
   await offer.locator('.perk-card').first().click();
   await expect(offer).toBeHidden();
+  expect((await page.evaluate(() => window.__game!.eco()!)).speed).toBe(2);
+  await page.evaluate(() => window.__game!.ecoSpeed(0));
   d = await info(page);
   expect(d.perks).toBe(1);
   expect(d.offers).toBe(0);
   await frames(page);
   await expect(page.locator('#def-perk')).toBeHidden();
 
-  // U opens the Armory: every weapon, the locked ones with what unlocks them.
-  await page.keyboard.press('KeyU');
-  const armory = page.locator('#armory');
-  await expect(armory).toBeVisible();
-  await expect(armory.locator('.armory-weapon')).toHaveCount(9);
-  await expect(armory.locator('.armory-weapon[data-weapon="slingshot"]')).toContainText('Main');
-  await expect(armory.locator('.armory-weapon[data-weapon="musket"]')).toContainText('Survive 6:00 and earn 1500 points');
-  await expect(armory.locator('.armory-tier[data-tier="4"]')).toContainText('Survive 8:00');
-  await page.screenshot({ path: `${SHOTS}/defense-armory.png` });
+  // The strip has one Shop button instead of separate buy and repair buttons.
+  await expect(page.locator('#def-buy')).toHaveCount(0);
+  await expect(page.locator('#def-repair')).toHaveCount(0);
+  await expect(page.locator('#def-shop')).toContainText('Shop (U)');
 
-  // Strengthen stone once the points allow it.
-  const button = armory.locator('.armory-tier[data-tier="2"] .armory-strengthen');
-  if (await button.isDisabled()) {
+  // U opens the Shop: the warren's four purchases, then weapons (shown, not chosen) and perks.
+  await page.evaluate(() => window.__game!.ecoSpeed(1));
+  await page.keyboard.press('KeyU');
+  const shop = page.locator('#shop');
+  await expect(shop).toBeVisible();
+  expect((await page.evaluate(() => window.__game!.eco()!)).speed).toBe(0);
+  await expect(shop.locator('.shop-item .armory-name')).toHaveText(['More block budget', 'Expand the warren', 'Repair everything', 'Reinforce the warren']);
+  await expect(shop.locator('.armory-weapon')).toHaveCount(9);
+  await expect(shop.locator('.armory-weapon[data-weapon="slingshot"]')).toContainText('Carried');
+  await expect(shop.locator('.armory-weapon[data-weapon="musket"]')).toContainText('Survive 6:00 and earn 1500 points');
+  await expect(shop).not.toContainText('Make main');
+  await page.screenshot({ path: `${SHOTS}/defense-shop.png` });
+
+  // Reinforce once the points allow it: every block and the core get tougher.
+  const reinforce = shop.locator('#shop-reinforce .shop-buy');
+  if (await reinforce.isDisabled()) {
     await page.keyboard.press('Escape');
-    for (let i = 0; i < 10 && (await info(page)).points < 90; i++) await advance(page, 15);
+    for (let i = 0; i < 12 && (await info(page)).points < 120; i++) await advance(page, 15);
     await page.keyboard.press('KeyU');
   }
-  await armory.locator('.armory-tier[data-tier="2"] .armory-strengthen').click();
-  expect((await info(page)).strength[2]).toBe(1);
-  await expect(armory.locator('.armory-tier[data-tier="2"]')).toContainText('strength 1/8');
+  const before = await info(page);
+  await shop.locator('#shop-reinforce .shop-buy').click();
+  const after = await info(page);
+  expect(after.strength.every((l) => l >= 1)).toBe(true);
+  expect(after.points).toBe(before.points - 120);
+  await expect(shop.locator('#shop-reinforce')).toContainText('Level 1/8');
   await page.keyboard.press('Escape');
+  await expect(shop).toBeHidden();
+  expect((await page.evaluate(() => window.__game!.eco()!)).speed).toBe(1);
+  await page.evaluate(() => window.__game!.ecoSpeed(0));
   expect(errors).toEqual([]);
 });
 

@@ -12,8 +12,8 @@ const SITE_MARGIN = 4;
  * footprint and a margin. Rabbits in a warren need no water, so it doesn't matter how far it is.
  * Returns the warren's centre cell.
  */
-export function chooseWarrenSite(terrain: Terrain): { x: number; z: number } {
-  const r = Math.floor(WARREN_SIZE / 2) + SITE_MARGIN;
+export function chooseWarrenSite(terrain: Terrain, half = Math.floor(WARREN_SIZE / 2)): { x: number; z: number } {
+  const r = half + SITE_MARGIN;
   for (let ring = 0; ring < 40; ring++) {
     const d = ring * 3;
     for (let i = -ring; i <= ring; i++)

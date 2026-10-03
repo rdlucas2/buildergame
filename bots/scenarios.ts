@@ -20,6 +20,16 @@ export interface Watched {
   coreHit: { clock: number; breeders: boolean } | null;
   thirst: number;
   drinkers: number;
+  /** The warren at the start and at its biggest: room for rabbits, rabbits alive, defenders on posts, core blocks. */
+  start: Sizes;
+  peak: Sizes;
+}
+
+export interface Sizes {
+  room: number;
+  rabbits: number;
+  manned: number;
+  core: number;
 }
 
 export interface Settings {
@@ -31,15 +41,27 @@ export interface Settings {
 export async function watchRound(style: Style, seed: number, modifiers: DefenseModifiers, brain: Brain, maxSeconds: number): Promise<Watched> {
   let coreHit: Watched['coreHit'] = null;
   let drinkers = 0;
+  const sizes = (s: DefenseSession): Sizes => ({
+    room: s.defense.room,
+    rabbits: s.eco.population.creatures.filter((c) => c.deadFor < 0 && c.species !== 'predator').length,
+    manned: s.defense.manned,
+    core: s.defense.base.coreCells().length,
+  });
+  let peak: Sizes | null = null;
   const onTick = (s: DefenseSession) => {
     const d = s.defense;
     if (!coreHit && d.base.coreDamage > 0) coreHit = { clock: d.clock, breeders: d.breedersLeft() };
-    if (d.tickIndex % 50 === 0) for (const c of s.eco.population.creatures) if (c.deadFor < 0 && (c.activity === 'drink' || c.activity === 'seekWater')) drinkers++;
+    if (d.tickIndex % 50 === 0) {
+      for (const c of s.eco.population.creatures) if (c.deadFor < 0 && (c.activity === 'drink' || c.activity === 'seekWater')) drinkers++;
+      const now = sizes(s);
+      peak = peak ? { room: Math.max(peak.room, now.room), rabbits: Math.max(peak.rabbits, now.rabbits), manned: Math.max(peak.manned, now.manned), core: Math.max(peak.core, now.core) } : now;
+    }
   };
   const table = new SimTable(seed, modifiers, onTick);
   const startBudget = table.session.defense.budget;
+  const start = sizes(table.session);
   const run = await playRound(table, brain, { seed, size: DEFENSE_GROUND, modifiers, every: 10, maxSeconds });
-  return { run, style, seed, startBudget, coreHit, thirst: table.session.eco.population.tally.thirst, drinkers };
+  return { run, style, seed, startBudget, coreHit, thirst: table.session.eco.population.tally.thirst, drinkers, start, peak: peak ?? start };
 }
 
 const median = (xs: number[]) => {
@@ -47,7 +69,10 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
-/** Rounds every scenario shares, played once: each style on a fresh profile, and balanced on a maxed one. */
+/** The styles played on a maxed profile: an all-rounder, and the one that grows the warren for the late game. */
+export const MAX_STYLES: readonly Style[] = ['balanced', 'expander'];
+
+/** Rounds every scenario shares, played once: each style on a fresh profile, and `MAX_STYLES` on a maxed one. */
 export class Fixtures {
   private fresh: Promise<Watched[]> | null = null;
   private max: Promise<Watched[]> | null = null;
@@ -75,7 +100,7 @@ export class Fixtures {
     this.max ??= (async () => {
       const modifiers = modifiersFor(loadProfile('max').upgrades);
       const out: Watched[] = [];
-      for (const seed of this.seeds) out.push(await watchRound('balanced', seed, modifiers, new HeuristicBrain(PERSONAS.balanced), this.maxSeconds));
+      for (const style of MAX_STYLES) for (const seed of this.seeds) out.push(await watchRound(style, seed, modifiers, new HeuristicBrain(PERSONAS[style]), this.maxSeconds));
       return out;
     })();
     return this.max;
@@ -114,7 +139,7 @@ export const SCENARIOS: readonly Scenario[] = [
     about: 'Every Warren Council upgrade: balanced lasts longer than on a fresh profile, and at least 12:00.',
     async check(f) {
       const fresh = median((await f.freshRounds()).filter((r) => r.style === 'balanced').map((r) => r.run.final.clock));
-      const max = median((await f.maxRounds()).map((r) => r.run.final.clock));
+      const max = median((await f.maxRounds()).filter((r) => r.style === 'balanced').map((r) => r.run.final.clock));
       return { pass: max > fresh && max >= 720, detail: `fresh ${clock(fresh)}, max ${clock(max)}` };
     },
   },
@@ -136,6 +161,37 @@ export const SCENARIOS: readonly Scenario[] = [
       const lost = runs.filter((r) => r.run.final.outcome === 'lost');
       const odd = lost.filter((r) => r.run.final.coreHp > 0);
       return { pass: odd.length === 0, detail: `${lost.length}/${runs.length} rounds lost, all with the core down${odd.length ? `; ${odd.length} with it standing` : ''}` };
+    },
+  },
+  {
+    name: 'one-core',
+    about: 'Every round has exactly one core (a 2×2 block, 2 high), and no move adds to it.',
+    async check(f) {
+      const runs = [...(await f.freshRounds()), ...(await f.maxRounds())];
+      const bad = runs.filter((r) => r.start.core !== 8 || r.peak.core !== 8);
+      return { pass: bad.length === 0, detail: bad.length ? bad.map((r) => `${r.style} seed ${r.seed}: ${r.start.core} core blocks at the start, ${r.peak.core} at most`).join('; ') : `${runs.length} rounds, 8 core blocks each` };
+    },
+  },
+  {
+    name: 'warren-grows',
+    about: 'Expanding the warren makes room for more rabbits and posts for more defenders: the expander ends up with a bigger colony and more defenders on posts.',
+    async check(f) {
+      const runs = (await f.freshRounds()).filter((r) => r.style === 'expander');
+      const grown = runs.filter((r) => r.peak.room >= r.start.room + 20 && r.peak.rabbits > r.start.rabbits * 2 && r.peak.manned > r.start.manned + 8);
+      const r = runs[0];
+      return { pass: grown.length === runs.length, detail: `room ${r.start.room} → ${r.peak.room}, rabbits ${r.start.rabbits} → ${r.peak.rabbits}, on posts ${r.start.manned} → ${r.peak.manned}${runs.length > 1 ? ` (seed ${r.seed}; ${grown.length}/${runs.length} grew)` : ''}` };
+    },
+  },
+  {
+    name: 'late-game',
+    about: 'With every upgrade, growing the warren reaches the late game (the full suite: past 18:00, median), and nothing survives to 30:00.',
+    async check(f) {
+      const runs = await f.maxRounds();
+      const exp = median(runs.filter((r) => r.style === 'expander').map((r) => r.run.final.clock));
+      const longest = Math.max(...runs.map((r) => r.run.final.clock));
+      const target = f.settings.quick ? f.maxSeconds : 1080;
+      const pass = exp >= target && (f.settings.quick || longest < f.maxSeconds);
+      return { pass, detail: `expander ${clock(exp)} (median), longest round ${clock(longest)}${f.settings.quick ? ' (cut at ' + clock(f.maxSeconds) + ')' : ''}` };
     },
   },
   {

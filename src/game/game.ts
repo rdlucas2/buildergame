@@ -41,11 +41,14 @@ import { START_TIME, type Speed } from '../sim/clock';
 import type { ActionResult, Defense, DefenseAction } from '../sim/defense/defense';
 import { buyUpgrade, modifiersFor } from '../sim/defense/council';
 import { awardAchievements, finishRound, newRoundAchievements, type RoundResult, type RoundReward } from '../sim/defense/rewards';
-import { CORE, TIERS, WARREN_BLOCKS, blockCost, blockHp, tierOf } from '../sim/defense/materials';
+import { CORE, CORE_BLOCK, TIERS, WARREN_BLOCKS, blockCost, blockHp, tierOf } from '../sim/defense/materials';
 import { LOOKOUT } from '../sim/defense/base';
 import { describe as describeCriterion } from '../sim/defense/criteria';
 import { TIER_UNLOCKS } from '../sim/defense/unlocks';
 import { DEFENSE_GROUND } from '../sim/defense/replay';
+import { isWarrenDesign, planOf, planStats, starterPlan, type WarrenPlan } from '../sim/defense/design';
+import { BASE_SIZE, CORE_HP } from '../sim/defense/base';
+import { START_BUDGET } from '../sim/defense/defense';
 import type { DefenseObservation } from '../sim/defense/session';
 import { Ecosystem } from '../sim/ecosystem';
 import { randomSeed } from '../sim/rng';
@@ -287,12 +290,12 @@ export class Game {
     }
     const sm = this.structureMode;
     if (!sm) return;
-    if (i === sm.selected) {
+    if (i === sm.selected && !sm.warren) {
       this.handleKey('KeyE');
       return;
     }
     sm.selectSlot(i);
-    this.hud.setHotbar(sm.hotbar, sm.selected);
+    this.showStructureBar(sm);
   }
 
   /** Picks the wording for the current input device: keyboard and mouse, or touch buttons. */
@@ -391,7 +394,7 @@ export class Game {
       if (button === 2) return sm.place();
       if (button === 1) {
         const m = sm.pick();
-        if (m) this.hud.setHotbar(sm.hotbar, sm.selected);
+        if (m) this.showStructureBar(sm);
         return m !== null;
       }
       return false;
@@ -457,7 +460,7 @@ export class Game {
       this.toggleFortify();
       return true;
     }
-    if (!sm && code === 'KeyU' && this.eco.defense) return this.eco.openArmory();
+    if (!sm && code === 'KeyU' && this.eco.defense) return this.eco.openShop();
     if (!sm && code === 'KeyK' && this.eco.defense) return this.eco.openPerks();
     if (!sm && this.eco.fortify.active) {
       if (/^Digit[1-9]$/.test(code)) {
@@ -477,20 +480,24 @@ export class Game {
     if (sm) {
       if (/^Digit[1-9]$/.test(code)) {
         sm.selectSlot(Number(code.slice(5)) - 1);
-        this.hud.setHotbar(sm.hotbar, sm.selected);
+        this.showStructureBar(sm);
         return true;
       }
       switch (code) {
         case 'KeyE':
+          if (sm.warren) {
+            toast('A warren is built from its six blocks: 1–4 walls, 5 lookout post, 6 the core.', 'info', 2600);
+            return true;
+          }
           openMaterialPicker(sm.selectedMaterial, (id) => {
             sm.setSlotMaterial(sm.selected, id);
             this.hotbar = [...sm.hotbar];
             void this.worlds.setSetting('hotbar', this.hotbar);
-            this.hud.setHotbar(sm.hotbar, sm.selected);
+            this.showStructureBar(sm);
           });
           return true;
         case 'KeyQ':
-          if (sm.pick()) this.hud.setHotbar(sm.hotbar, sm.selected);
+          if (sm.pick()) this.showStructureBar(sm);
           return true;
         case 'Enter':
         case 'NumpadEnter':
@@ -561,18 +568,28 @@ export class Game {
   // ---- structure mode --------------------------------------------------------------------
 
   /** Opens the editor, optionally on an existing structure. Built-in examples always open as a copy. */
-  async enterStructureMode(existing?: Structure, opts: { asCopy?: boolean } = {}): Promise<void> {
+  async enterStructureMode(existing?: Structure, opts: { asCopy?: boolean; warren?: boolean } = {}): Promise<void> {
     if (this.structureMode) return;
     closePanel();
     this.worldMode.cancelPlacing();
+    if (this.eco.fortify.active) this.toggleFortify(false);
     this.worldPoseBackup = this.controls.getPose();
     this.worldMode.group.visible = false;
     const asCopy = !!existing && (opts.asCopy ?? this.library.isExample(existing.id));
-    const sm = new StructureMode(this.materials, { hotbar: this.hotbar, asCopy, ...(existing ? { existing } : {}) });
+    // A warren design: asked for, an existing design (it has a core), or a new structure in a Warren Defense world.
+    const warren = opts.warren ?? (existing ? isWarrenDesign(existing) : !!this.eco.defense);
+    const sm = new StructureMode(this.materials, { hotbar: this.hotbar, asCopy, ...(existing ? { existing } : {}), ...(warren ? { warren: { area: BASE_SIZE } } : {}) });
+    if (warren && !existing) sm.loadBlocks(starterPlan().blocks);
     this.structureMode = sm;
     this.host.scene.add(sm.group);
     this.controls.setPose(sm.startPose());
     this.refreshHudChrome();
+    if (warren)
+      return void toast(
+        `Designing a warren${existing ? `: "${existing.name}"` : ', starting from the starter warren'}. Walls (1–4), lookout posts (5) and the core (6): it has exactly one, so placing it again moves it. ${this.say('Enter saves.', 'Tap Save when you are done.')}`,
+        'info',
+        5000,
+      );
     toast(
       !existing
         ? this.say('Structure mode: right click places, left click removes. Enter saves.', 'Structure mode: aim at the floor and tap Place. Save when you are done.')
@@ -632,11 +649,24 @@ export class Game {
       console.warn('thumbnail failed', e);
     }
     await this.library.save(s);
-    this.hotbar = [...sm.hotbar];
-    void this.worlds.setSetting('hotbar', this.hotbar);
+    if (!sm.warren) {
+      this.hotbar = [...sm.hotbar];
+      void this.worlds.setSetting('hotbar', this.hotbar);
+    }
     const wasEditing = !!sm.editing && !sm.asCopy;
     this.leaveStructureMode();
     const size = s.voxels.size;
+    if (sm.warren) {
+      const m = this.roundModifiers();
+      const stats = planStats(planOf(s), START_BUDGET + m.budget, m);
+      if (stats.problem) {
+        toast(`Saved the warren "${s.name}", but it can't be played yet: ${stats.problem}`, 'error', 6000);
+        return s;
+      }
+      toast(`Saved the warren "${s.name}": ${stats.cost} budget, ${stats.posts} lookout posts, room for ${stats.room} rabbits.`, 'success', 4000);
+      if (this.eco.defense && (await confirmDialog('Play this warren?', `Start a new round with "${s.name}"? The round in progress ends.`, 'New round'))) await this.restartRound(undefined, s);
+      return s;
+    }
     if (wasEditing) {
       this.worldMode.refreshStructure(s.id);
       this.warnOverlaps(s);
@@ -758,9 +788,9 @@ export class Game {
         {
           onOpen: (id) => void this.switchWorld(id).then(() => closePanel()),
           onNew: async () => {
-            const r = await newWorldDialog(`World ${this.worlds.list().length + 1}`);
+            const r = await newWorldDialog(`World ${this.worlds.list().length + 1}`, this.warrenChoices());
             if (r === null) return render();
-            await this.createWorld(r.name.trim() || 'Untitled world', { wild: r.kind === 'wild', defense: r.kind === 'defense' });
+            await this.createWorld(r.name.trim() || 'Untitled world', { wild: r.kind === 'wild', defense: r.kind === 'defense', ...(r.warren ? { warren: r.warren } : {}) });
             closePanel();
           },
           onRename: async () => {
@@ -818,9 +848,10 @@ export class Game {
    * Creates and opens a new world. Wild worlds get terrain, grass and day/night from a fresh seed;
    * Warren Defense worlds also get a walled warren and the first round of waves.
    */
-  async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number; modifiers?: DefenseModifiers } = {}): Promise<World> {
+  async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number; modifiers?: DefenseModifiers; warren?: string } = {}): Promise<World> {
     const seed = opts.seed ?? randomSeed();
-    const w = opts.defense ? newDefenseWorld(name, seed, opts.modifiers ?? this.roundModifiers()) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
+    const design = opts.warren ? this.playableDesign(this.library.get(opts.warren)) : undefined;
+    const w = opts.defense ? newDefenseWorld(name, seed, opts.modifiers ?? this.roundModifiers(), design) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
     await this.worlds.save(w);
     await this.switchWorld(w.id);
     return w;
@@ -863,14 +894,16 @@ export class Game {
   }
 
   /** Starts a fresh round in the current Warren Defense world (a new seed, the starter warren). */
-  async restartRound(seed = randomSeed()): Promise<void> {
+  async restartRound(seed = randomSeed(), design?: Structure | null): Promise<void> {
     const current = this.currentWorld();
     if (!current.ecosystem?.defense) return;
     this.toggleFortify(false);
     // A round given up part-way still counts: its time, kills and achievements are paid first.
     const d = this.eco.defense;
     if (d && d.clock > 0) await this.rewardRound(d);
-    const fresh = newDefenseWorld(current.name, seed, this.roundModifiers());
+    // The same warren as last time, unless another is chosen (null for the starter warren).
+    const pick = design === undefined ? (d?.design ? this.library.get(d.design.id) : undefined) : (design ?? undefined);
+    const fresh = newDefenseWorld(current.name, seed, this.roundModifiers(), this.playableDesign(pick));
     const w: World = { ...current, ecosystem: fresh.ecosystem, spawn: fresh.spawn, placements: [] };
     this.worldMode.load(w);
     this.eco.reattach(w);
@@ -950,6 +983,58 @@ export class Game {
 
   // ---- Warren Defense: fortify ----------------------------------------------------------
 
+  /** The library's warren designs that a round can start from now, for the new-world dialog. */
+  private warrenChoices(): Array<{ id: string; label: string }> {
+    const m = this.roundModifiers();
+    return this.library
+      .all()
+      .filter((s) => isWarrenDesign(s))
+      .map((s) => ({ s, stats: planStats(planOf(s), START_BUDGET + m.budget, m) }))
+      .filter((x) => !x.stats.problem)
+      .map(({ s, stats }) => ({ id: s.id, label: `${s.name}: ▣ ${stats.cost}, ${stats.posts} posts, room for ${stats.room}` }));
+  }
+
+  /** A library warren design as a round can start from it, or undefined (with a message) if it can't. */
+  private playableDesign(s: Structure | undefined): { plan: WarrenPlan; id: string } | undefined {
+    if (!s || !isWarrenDesign(s)) return undefined;
+    const m = this.roundModifiers();
+    const plan = planOf(s);
+    const stats = planStats(plan, START_BUDGET + m.budget, m);
+    if (stats.problem) {
+      toast(`"${s.name}" can't be played: ${stats.problem} Starting with the starter warren.`, 'error', 6000);
+      return undefined;
+    }
+    return { plan, id: s.id };
+  }
+
+  /** The builder's bar: the warren designer's six blocks, or the usual materials. */
+  private showStructureBar(sm: StructureMode): void {
+    if (!sm.warren) return this.hud.setHotbar(sm.hotbar, sm.selected);
+    const blocks = [...WARREN_BLOCKS, CORE_BLOCK];
+    this.hud.setBlockBar(
+      blocks.map((b) => ({ ...b, cost: blockCost(b.material), hp: b.material === CORE ? CORE_HP : blockHp(b.material), locked: null, post: b.material === LOOKOUT })),
+      sm.selected,
+    );
+  }
+
+  /** Cost, posts, room and core of the warren being designed (worked out again only after a change). */
+  designStatus(sm: StructureMode): string[] {
+    if (this.designCache?.revision !== sm.revision) {
+      const m = this.roundModifiers();
+      const budget = START_BUDGET + m.budget;
+      const stats = planStats(sm.toPlan('design'), budget, m);
+      this.designCache = {
+        revision: sm.revision,
+        lines: [
+          `Warren design · ▣ ${stats.cost} of ${budget} budget · ${stats.posts} lookout posts · room for ${stats.room} rabbits`,
+          stats.problem ?? 'Ready to play: save it (Enter), then start a round with it',
+        ],
+      };
+    }
+    return this.designCache.lines;
+  }
+  private designCache: { revision: number; lines: string[] } | null = null;
+
   /** Which of the warren blocks Fortify builds with (Stone wall to start). */
   private fortifySlot = 1;
 
@@ -1011,9 +1096,16 @@ export class Game {
           const v = placementVoxelAt(s, placement, x, y, z);
           if (v !== 0) blocks.push({ x, y, z, material: s.palette[v - 1].material });
         }
-    const r = this.eco.applyDefense({ type: 'placeMany', blocks });
+    // A warren has exactly one core: a design's own core stays out.
+    const cores = blocks.filter((b) => b.material === CORE).length;
+    const keep = blocks.filter((b) => b.material !== CORE);
+    if (keep.length === 0) {
+      toast('Nothing to build: the warren already has its core, and it can only ever have one.', 'error', 2600);
+      return false;
+    }
+    const r = this.eco.applyDefense({ type: 'placeMany', blocks: keep });
     if (r.ok) {
-      toast(`Built "${s.name}" into the warren (${blocks.length} blocks).`, 'success', 1800);
+      toast(`Built "${s.name}" into the warren (${keep.length} blocks${cores ? '; its core left out, as a warren has only one' : ''}).`, 'success', 2400);
       wm.cancelPlacing();
       this.scheduleSave();
     } else toast(r.reason ?? 'It does not fit.', 'error', 2200);
@@ -1116,19 +1208,29 @@ export class Game {
     if (fortifying) {
       this.hud.setMode(`Warren Defense: ${this.worldMode.world.name} — Fortify`);
       this.refreshBlockBar();
-      this.hud.setStructureButton('Build structure', 'B');
+      this.hud.setStructureButton('Design warren', 'B');
       this.hud.setHint('Right click: build · Left click: remove · 1–5: block (5 is a lookout post) · F or Esc: done');
     } else if (sm) {
       this.hud.setMode(
-        !sm.editing ? 'Structure mode' : sm.asCopy ? `Structure mode — copy of "${sm.editing.name}"` : `Structure mode — editing "${sm.editing.name}"`,
+        sm.warren
+          ? `Warren designer${sm.editing && !sm.asCopy ? ` — "${sm.editing.name}"` : ''}`
+          : !sm.editing
+            ? 'Structure mode'
+            : sm.asCopy
+              ? `Structure mode — copy of "${sm.editing.name}"`
+              : `Structure mode — editing "${sm.editing.name}"`,
       );
-      this.hud.setHotbar(sm.hotbar, sm.selected);
-      this.hud.setStructureButton('Save structure', 'Enter');
-      this.hud.setHint('Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave');
+      this.showStructureBar(sm);
+      this.hud.setStructureButton(sm.warren ? 'Save warren' : 'Save structure', 'Enter');
+      this.hud.setHint(
+        sm.warren
+          ? 'Right click: place · Left click: remove · 1–4: walls · 5: lookout post · 6: the core (one; placing it moves it) · Ctrl+Z: undo · Enter: save · Esc: leave'
+          : 'Right click: place · Left click: remove · 1–9: material · E: all materials · Ctrl+Z: undo · Enter: save · Esc: leave',
+      );
     } else {
       this.hud.setMode(`${this.eco.defense ? 'Warren Defense' : this.eco.active ? 'Wild world' : 'World'}: ${this.worldMode.world.name}`);
-      this.hud.setStructureButton('Build structure', 'B');
-      this.hud.setHint('Tab: library · B: build a structure · M: worlds · H: help');
+      this.hud.setStructureButton(this.eco.defense ? 'Design warren' : 'Build structure', 'B');
+      this.hud.setHint(this.eco.defense ? 'B: design a warren · F: fortify · U: shop · P: pause · M: worlds · H: help' : 'Tab: library · B: build a structure · M: worlds · H: help');
     }
     this.updateHudStatus();
   }
@@ -1138,6 +1240,10 @@ export class Game {
     const p = this.host.camera.position;
     const pos = `Position ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`;
     const sm = this.structureMode;
+    if (sm?.warren) {
+      this.hud.setStatus(this.designStatus(sm));
+      return;
+    }
     if (sm) {
       const d = sm.dimensions();
       const mat = getMaterial(sm.selectedMaterial)?.name ?? sm.selectedMaterial;
@@ -1183,7 +1289,7 @@ export class Game {
         lines.push(`Looking at "${h.structure.name}" (${size.x}×${size.y}×${size.z}, ${structureBlockCount(h.structure)} blocks)`);
         this.hud.setHint('X: remove · G: move · Tab: library · B: build a structure');
       } else {
-        this.hud.setHint('Tab: library · B: build a structure · M: worlds · H: help');
+        this.hud.setHint(this.eco.defense ? 'B: design a warren · F: fortify · U: shop · P: pause · M: worlds · H: help' : 'Tab: library · B: build a structure · M: worlds · H: help');
       }
     }
     this.hud.setStatus(lines);
@@ -1249,8 +1355,8 @@ export class Game {
       hoveredPlacement: () => g.worldMode.hoveredPlacement()?.placement ?? null,
       world: () => JSON.parse(JSON.stringify(g.worldMode.world)) as World,
       listWorlds: () => g.worlds.list(),
-      createWorld: (name, wild, seed) =>
-        g.createWorld(name, { wild: wild === true || wild === 'wild', defense: wild === 'defense', ...(seed !== undefined ? { seed } : {}) }).then((w) => w.id),
+      createWorld: (name, wild, seed, warren) =>
+        g.createWorld(name, { wild: wild === true || wild === 'wild', defense: wild === 'defense', ...(seed !== undefined ? { seed } : {}), ...(warren ? { warren } : {}) }).then((w) => w.id),
       eco: () => g.eco.info(),
       ecoCell: (x, z) => g.eco.cell(x, z),
       ecoAdvance: (seconds) => g.eco.advance(seconds),
@@ -1275,7 +1381,10 @@ export class Game {
       botOverlay: (text) => setBotOverlay(text),
       fortify: (on) => g.toggleFortify(on),
       fortifyAim: () => (g.eco.fortify.active ? { voxel: g.eco.fortify.voxel, place: g.eco.fortify.place } : null),
-      restartRound: (seed) => g.restartRound(seed),
+      restartRound: (seed, warren) => g.restartRound(seed, warren === undefined ? undefined : warren === null ? null : (g.library.get(warren) ?? null)),
+      designWarren: (id) => g.enterStructureMode(id ? g.library.get(id) : undefined, { warren: true }),
+      designCore: (x, y, z) => g.structureMode?.placeCore({ x, y, z }) ?? false,
+      designStatus: () => (g.structureMode?.warren ? g.designStatus(g.structureMode) : null),
       profile: () => structuredClone(g.profile.profile),
       councilBuy: (id) => g.buyUpgrade(id),
       council: () => g.openCouncil(),
@@ -1357,7 +1466,7 @@ export interface GameDebug {
    * Creates and opens a world. `true` or `'wild'` adds terrain, grass, day/night and creatures;
    * `'defense'` makes a Warren Defense world. A seed makes it reproducible.
    */
-  createWorld(name: string, wild?: boolean | 'wild' | 'defense', seed?: number): Promise<string>;
+  createWorld(name: string, wild?: boolean | 'wild' | 'defense', seed?: number, warren?: string): Promise<string>;
   eco(): EcosystemInfo | null;
   ecoCell(x: number, z: number): EcosystemCell | null;
   /** Runs the ecosystem forward immediately by this many simulation seconds. */
@@ -1399,7 +1508,14 @@ export interface GameDebug {
   /** Where Fortify mode is aiming: the block under the crosshair and where a new one would go. */
   fortifyAim(): { voxel: Vec3 | null; place: Vec3 | null } | null;
   /** Starts a new round in the current Warren Defense world. */
-  restartRound(seed?: number): Promise<void>;
+  /** Starts a new round: with a warren design's id, from that design (null: the starter warren). */
+  restartRound(seed?: number, warren?: string | null): Promise<void>;
+  /** Opens the warren designer, on a design from the library or a new one from the starter warren. */
+  designWarren(id?: string): Promise<void>;
+  /** Puts the designer's core (2×2, 2 high) with its corner at (x, y, z), moving it if there is one. */
+  designCore(x: number, y: number, z: number): boolean;
+  /** The designer's summary lines (cost, posts, room, and any problem), or null outside it. */
+  designStatus(): string[] | null;
   /** The player's Warren Defense progress: Clover, upgrades, achievements, lifetime totals. */
   profile(): PlayerProfile;
   /** Buys a Warren Council upgrade level; resolves with why it couldn't, or null. */
@@ -1431,8 +1547,8 @@ declare global {
  * A new Warren Defense world: wild terrain, the starter warren beside the water with the herd
  * inside, and a spawn point looking down on it.
  */
-export function newDefenseWorld(name: string, seed: number, modifiers: Partial<DefenseModifiers> = {}): World {
-  const eco = Ecosystem.create(DEFENSE_GROUND, seed, { defense: modifiers });
+export function newDefenseWorld(name: string, seed: number, modifiers: Partial<DefenseModifiers> = {}, design?: { plan: WarrenPlan; id: string }): World {
+  const eco = Ecosystem.create(DEFENSE_GROUND, seed, { defense: modifiers, ...(design ? { warren: design.plan, design: { id: design.id, name: design.plan.name } } : {}) });
   const site = eco.defense!.site;
   return createWorld({
     name,

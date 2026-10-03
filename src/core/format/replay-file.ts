@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import type { DefenseModifiers } from '../defense-state';
 import type { DefenseAction } from '../../sim/defense/defense';
+import type { WarrenPlan } from '../../sim/defense/design';
 import { FileFormatError, formatZodError, parseJsonText } from './errors';
 import { ModifiersSchema } from './world-file';
 
 export const REPLAY_FORMAT = 'buildergame.replay';
 export const REPLAY_FORMAT_VERSION = 1;
 export const REPLAY_FILE_EXTENSION = '.replay.json';
+
+/** Blocks a warren's area can hold. */
+const BASE_CELLS = 48 * 16 * 48;
 
 /** More actions than a 30-minute round could hold at one per tick. */
 export const MAX_REPLAY_ACTIONS = 20_000;
@@ -42,6 +46,8 @@ export interface Replay {
   /** The tick the recording ended at. */
   ticks: number;
   result: ReplayResult;
+  /** The warren the round started from, when it wasn't the starter warren. */
+  warren?: WarrenPlan;
 }
 
 const int = z.number().int();
@@ -61,6 +67,7 @@ const ActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('equip'), weapon: id }).strict(),
   z.object({ type: z.literal('loadout'), weapon: id, count: int.min(0).max(100_000) }).strict(),
   z.object({ type: z.literal('strengthen'), tier: int.min(0).max(16) }).strict(),
+  z.object({ type: z.literal('reinforce') }).strict(),
   z.object({ type: z.literal('repair') }).strict(),
 ]);
 
@@ -73,6 +80,10 @@ const ReplayFileSchema = z.object({
   player: z.object({ style: id, brain: id }),
   actions: z.array(z.object({ tick: int.min(0).max(1e9), action: ActionSchema })).max(MAX_REPLAY_ACTIONS),
   ticks: int.min(0).max(1e9),
+  warren: z
+    .object({ name: z.string().max(200), blocks: z.array(block).max(BASE_CELLS) })
+    .strict()
+    .optional(),
   result: z.object({
     clock: z.number().min(0).max(1e9),
     wave: int.min(0).max(1e6),
@@ -98,6 +109,7 @@ export function decodeReplay(input: unknown): Replay {
   const r = ReplayFileSchema.safeParse(json);
   if (!r.success) throw new FileFormatError(formatZodError('replay', r.error));
   const { format: _f, version: _v, ...replay } = r.data;
+  if (replay.warren === undefined) delete (replay as { warren?: unknown }).warren;
   // Ticks must not go backwards: a replay applies its actions in order.
   for (let i = 1; i < replay.actions.length; i++)
     if (replay.actions[i].tick < replay.actions[i - 1].tick) throw new FileFormatError('Invalid replay file: actions are out of order.');

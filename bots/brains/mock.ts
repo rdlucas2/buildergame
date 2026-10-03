@@ -75,8 +75,6 @@ export class MockApi {
         const p = this.rules.perk(o);
         return p?.action.type === 'reroll' ? 'redeal' : `card_${this.rules.bestCard(o) + 1}`;
       }
-      case 'weapon':
-        return labels.includes(o.mainWeapon) ? o.mainWeapon : first;
       default:
         return first;
     }

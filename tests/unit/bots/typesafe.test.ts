@@ -55,7 +55,7 @@ describe('the TypeSafe brain', () => {
   });
 
   it('asks one systemOne request per decision, with a choice for each judgment', async () => {
-    const api = fakeApi(() => ({ defenders: 'most', build: 'more-lookouts', perk: 'card_2', weapon: 'slingshot' }));
+    const api = fakeApi(() => ({ defenders: 'most', build: 'more-lookouts', perk: 'card_2' }));
     const brain = new TypeSafeBrain(PERSONAS.sharpshooter, { apiKey: 'test-key', fetch: api.fetch, retry: { maxRetries: 0 } });
     const view = viewWithOffer();
     const d = await brain.decide(view);
@@ -63,12 +63,12 @@ describe('the TypeSafe brain', () => {
     const req = api.sent[0];
     expect(req.url).toBe('https://api.typesafe.ai/v1/systemone');
     expect(req.headers.Authorization).toBe('Bearer test-key');
-    expect(Object.keys(req.body.questions).sort()).toEqual(['build', 'defenders', 'perk', 'weapon']);
+    // No weapon question: defenders always carry the best weapon unlocked, as in the game.
+    expect(Object.keys(req.body.questions).sort()).toEqual(['build', 'defenders', 'perk']);
     for (const q of Object.values(req.body.questions)) expect(q.type).toBe('choice');
     // Code lists the options; the model only picks one of them.
     expect(Object.keys(req.body.questions.build.criteria)).toEqual(view.options.map((o) => o.id));
     expect(Object.keys(req.body.questions.perk.criteria)).toEqual(view.obs.offer.map((_, i) => `card_${i + 1}`));
-    expect(Object.keys(req.body.questions.weapon.criteria)).toEqual(view.obs.unlocked);
     expect(req.body.state).toMatchObject({ persona: { style: 'Sharpshooter' }, rabbits: { total: view.obs.rabbits } });
     // Each question names the state it judges.
     expect(req.body.questions.build.instructions).toMatch(/`warren`/);
@@ -76,16 +76,14 @@ describe('the TypeSafe brain', () => {
     const grown = view.obs.rabbits - view.obs.young;
     expect(d.actions).toContainEqual({ type: 'allocate', defenders: Math.min(view.obs.rabbits, Math.max(PERSONAS.sharpshooter.minDefenders, Math.round(grown * 0.7))) });
     expect(d.actions).toContainEqual({ type: 'pickPerk', index: 1 });
-    // The bow is already carried (it's better); the model asked for the slingshot instead.
-    expect(view.obs.mainWeapon).toBe('bow');
-    expect(d.actions).toContainEqual({ type: 'equip', weapon: 'slingshot' });
+    expect(d.actions.some((a) => 'type' in a && a.type === 'equip')).toBe(false);
     expect(d.actions).toContainEqual({ option: 'more-lookouts' });
     expect(d.usage).toEqual({ input: 321, output: 9 });
     expect(d.probs?.build[0]).toEqual({ label: 'more-lookouts', p: 0.7 });
     expect(d.fallback).toBeUndefined();
   });
 
-  it('skips the perk and weapon questions when there is nothing to choose', async () => {
+  it('skips the perk question when no perk is offered', async () => {
     const api = fakeApi(() => ({ defenders: 'half', build: 'wait' }));
     const brain = new TypeSafeBrain(PERSONAS.balanced, { apiKey: 'k', fetch: api.fetch, retry: { maxRetries: 0 } });
     const s = DefenseSession.create({ seed: 4 });

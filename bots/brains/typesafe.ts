@@ -2,7 +2,6 @@ import { APIConnectionError, APIError, TypeSafeClient, TypeSafeError, choice, ty
 import type { PlayerProfile } from '../../src/core/profile';
 import { describePerk } from '../../src/sim/defense/perks';
 import { SCHEDULE } from '../../src/sim/defense/waves';
-import { WEAPONS } from '../../src/sim/defense/weapons';
 import { clock, type BotAction, type Brain, type CouncilDecision, type CouncilOffer, type Decision, type Probs, type Usage, type View } from '../brain';
 import type { Persona } from '../personas';
 import { HeuristicBrain } from './heuristic';
@@ -68,7 +67,8 @@ type Answers = Record<string, ChoiceResponse>;
 /**
  * A persona played by TypeSafe: at each decision point the code lists what is possible, and one
  * `systemOne` request asks the model to choose, with independent `choice` questions (defenders,
- * build move, perk, weapon) answered together over the same state. Every answer is checked against
+ * build move, perk) answered together over the same state. Defenders always carry the best weapon
+ * unlocked, as in the game, so there is no weapon to choose. Every answer is checked against
  * the options offered; anything else, and any API error, falls back to the heuristic brain (and is
  * logged in the decision). Runs only in Node: the key never reaches the game.
  */
@@ -144,7 +144,7 @@ export class TypeSafeBrain implements Brain {
     };
   }
 
-  /** Independent choices over the same state, asked together; perk and weapon only when they apply. */
+  /** Independent choices over the same state, asked together; the perk only when one is offered. */
   questions(view: View): Questions {
     const o = view.obs;
     const q: Record<string, ChoiceQuestion> = {};
@@ -161,16 +161,6 @@ export class TypeSafeBrain implements Brain {
       o.offer.forEach((c, i) => (cards[`card_${i + 1}`] = `${c.rarity} perk: ${describePerk(c)}.`));
       if (o.rerolls > 0) cards.redeal = `Discard these cards and deal new ones (${o.rerolls} redeal${o.rerolls === 1 ? '' : 's'} left this round).`;
       q.perk = choice(`Which perk should the warren take for the rest of the round? Defenders carry the ${o.mainWeapon} (\`weapons.main\`); weapon perks only help the weapons they name. Consider how \`persona\` likes to play.`, cards);
-    }
-    if (o.unlocked.length > 1) {
-      q.weapon = choice(
-        'Which unlocked weapon should defenders carry, given the predators in `round` and the warren\'s lookout posts? Splash and piercing help against crowds; range helps from lookouts.',
-        Object.fromEntries(o.unlocked.map((id) => {
-          const w = WEAPONS[id];
-          const extras = [w.pellets ? `${w.pellets} pellets` : '', w.splash ? `blast radius ${w.splash}` : '', w.pierce ? `pierces ${w.pierce}` : '', w.hitscan ? 'instant beam' : ''].filter(Boolean).join(', ');
-          return [id, `${w.name}: ${w.damage} damage every ${w.cooldown}s, range ${w.range}${extras ? `, ${extras}` : ''}.`];
-        })),
-      );
     }
     return q;
   }
@@ -224,14 +214,6 @@ export class TypeSafeBrain implements Brain {
         const index = pick ? Number(pick.slice(5)) - 1 : this.fallback.bestCard(o);
         actions.push({ type: 'pickPerk', index });
         why.push(`${o.offer[index].rarity} ${o.offer[index].kind} perk`);
-      }
-    }
-
-    if (o.unlocked.length > 1) {
-      const w = legal('weapon', o.unlocked);
-      if (w && w !== o.mainWeapon) {
-        actions.push({ type: 'equip', weapon: w });
-        why.push(`equip the ${w}`);
       }
     }
 

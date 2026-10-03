@@ -50,6 +50,12 @@ the tight bounding box of the blocks it contains, so a saved structure never has
 Readers must verify that the decoded voxel count equals `size.x * size.y * size.z` and that no voxel
 value exceeds the palette length.
 
+A structure with blocks of material `core` is a **warren design**, made in the warren designer. A
+Warren Defense round can start from it instead of the starter warren. It can be played when its
+`core` blocks form exactly one 2×2×2 cube, it fits a warren's 48×16×48 building area, and its blocks
+cost no more than the round's starting budget (core blocks cost nothing). It is played centred on
+the warren's site.
+
 ### Rotation
 
 For a structure of size `(sx, sy, sz)`, a voxel at local `(x, z)` lands at the following cell of the
@@ -191,7 +197,9 @@ still written as version 2. Creatures gain three optional fields:
   "milestones": 1,
   "rerolls": 1,
   "rewarded": false,
-  "bosses": 0
+  "bosses": 0,
+  "room": 41,
+  "design": { "id": "6f1c…", "name": "Big Ring" }
 }
 ```
 
@@ -200,7 +208,7 @@ still written as version 2. Creatures gain three optional fields:
 | `site` | The warren's centre, a world cell. |
 | `base` | The warren's blocks: a voxel volume like a structure's, anchored with its min corner at world cell `(origin.x, 0, origin.z)`. Voxel value `v` refers to material `palette[v-1]`, and `0` is air. The layout and encoding are the same as structure voxels (order `xzy`). |
 | `base.damage` | Damage each block has taken, in tenths of a hit point, in the same layout and encoding. A block's hit points come from its material's tier, so they are not stored. |
-| `base` `core` blocks, `base.coreDamage` | The warren's core: blocks of material `core` (2×2, 2 high, in the middle of a new warren). They share one pool of hit points (1500, times the block hit-point modifier), and `coreDamage` is the damage the core has taken, in tenths of a hit point (0 when missing). Core blocks cost no budget and can't be built or removed. A round saved before warrens had a core gets one in the middle when loaded. |
+| `base` `core` blocks, `base.coreDamage` | The warren's core: blocks of material `core` (2×2, 2 high, in the middle of a new warren). They share one pool of hit points (1500, times the block hit-point modifier, plus a quarter for each level of reinforcement), and `coreDamage` is the damage the core has taken, in tenths of a hit point (0 when missing). A warren has exactly one core. Core blocks cost no budget and can't be built or removed in a round, and predators can't damage them while any breeder is alive. A round saved before warrens had a core gets one in the middle when loaded. |
 | `clock` | Simulation seconds the round has lasted. |
 | `wave`, `nextWaveAt` | Waves started so far, and the round time of the next one. |
 | `orders` | Predator groups still to arrive: when, which kind, how many, the direction they come from (radians, from the warren), a hit-point multiplier, and an optional `rank` (`elite` or `boss`). |
@@ -211,13 +219,15 @@ still written as version 2. Creatures gain three optional fields:
 | `outcome` | `playing`, or `lost` once the core has fallen. |
 | `modifiers` | Bonuses the round started with (from the Warren Council), stored so a reload plays on with the same numbers: extra `budget` and `rabbits`; multipliers on block hit points, defender damage, bite damage taken (`armour`) and breeding (`fertility`); `startWeapon`, how many weapons after the slingshot are unlocked from the start; `rerolls` per round; and `cards` per perk offer. |
 | `unlocked`, `mainWeapon`, `loadout` | Weapons unlocked this round, the one defenders carry by default, and how many defenders carry each other weapon. Weapon ids are `slingshot`, `bow`, `crossbow`, `musket`, `rifle`, `shotgun`, `cannon`, `laser` and `plasma`; readers drop ids they don't know. |
-| `tiers`, `strength` | Material tiers that can be built with (tiers 0 to `tiers - 1`, from soft to metal), and the strength level bought for each tier (each level adds a quarter of the tier's hit points). |
+| `tiers`, `strength` | Material tiers that can be built with (tiers 0 to `tiers - 1`, from soft to metal), and the strength level of each tier (each level adds a quarter of the tier's hit points, up to 8). Reinforcing the warren raises every tier to one level above the lowest; that lowest level also toughens the core. |
 | `perks` | Perks taken. `kind` is one of `damage`, `rate`, `range`, `crit`, `pierce`, `splash`, `multishot` (these boost the weapon family in `target`: `sling`, `bow`, `firearm`, `heavy`, `energy`, or `all`), `regen`, `armour`, `fertility`, `budget` or `bounty`. `amount` is a fraction (0.07 is 7%), except for `range` and `splash` (cells), `pierce` and `multishot` (a count) and `budget` (blocks). `rarity` runs `common`, `uncommon`, `rare`, `epic`, `legendary`. |
 | `offers`, `offersMade` | Perk choices waiting, three cards each, oldest first; and how many offers were dealt (the next offer's seed). |
 | `milestones` | Five-minute milestones reached. |
 | `rerolls` | Perk offers that can still be redealt this round. |
 | `rewarded` | True once the round's Clover and achievements went to the player's profile, so a reload doesn't pay twice. |
 | `bosses` | Boss waves sent so far (one with the first wave at or after 10:00, one at 20:00). |
+| `room` | Rabbits the warren has room for: a quarter of the open ground cells its walls enclose (for a body 2 tall), plus the `rabbits` modifier, from 12 to 120. Breeding stops there. It is worked out again only when the player changes the walls, so blocks broken by predators don't shrink it. When missing, it is worked out from `base`. |
+| `design` | The warren design the round started from (the structure's library `id` and its `name`), so a new round can start from it again. Missing for the starter warren. |
 
 All the fields from `unlocked` on are optional: a round saved before they existed loads with just
 the slingshot, soft to stone blocks and no perks.
@@ -283,12 +293,13 @@ same seed reproduces it exactly, in the browser or in Node. The test bots write 
 | `seed`, `size` | The round's seed and ground size (Warren Defense worlds are 512 wide). |
 | `modifiers` | The Warren Council upgrades the round started with (as in a version 3 world's `defense.modifiers`). |
 | `player` | Who played: a bot style (or `player`) and what decided (`heuristic`, `typesafe`). |
-| `actions` | Every action that went through, in order. `tick` is tenths of a second of round time; an action is applied just before that tick runs. Actions are the same as the game's: `allocate`, `callWave`, `buyBudget`, `place`, `placeMany`, `remove`, `pickPerk`, `reroll`, `equip`, `loadout`, `strengthen`, `repair`. Unknown actions or fields make the file invalid. |
+| `warren` | Optional. The warren design the round started from, when it wasn't the starter warren: its `name` and `blocks`, each `{ "x", "y", "z", "material" }` relative to the design's corner. |
+| `actions` | Every action that went through, in order. `tick` is tenths of a second of round time; an action is applied just before that tick runs. Actions are the same as the game's: `allocate`, `callWave`, `buyBudget`, `place`, `placeMany`, `remove`, `pickPerk`, `reroll`, `equip`, `loadout`, `strengthen`, `reinforce`, `repair`. Unknown actions or fields make the file invalid. |
 | `ticks` | Where the recording ended. A replay stops there, or earlier if the warren falls. |
 | `result` | How the round ended, and `hash`: a fingerprint of the whole simulation at the end. A replay that ends with the same hash played out identically. |
 
-A round is set up as the game sets up a new Warren Defense world: created from the seed, saved,
-then restored. Watching a replay pays no Clover and earns no achievements.
+A round is set up as the game sets up a new Warren Defense world: created from the seed (and the
+`warren` design, if any), saved, then restored. Watching a replay pays no Clover and earns no achievements.
 
 ## World bundle: `*.world.zip`
 

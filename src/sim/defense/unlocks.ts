@@ -25,6 +25,13 @@ export const MAX_STRENGTH = 8;
 const STRENGTH_PRICE = [40, 60, 90, 140, 220];
 const STRENGTH_GROWTH = 1.5;
 
+/** Points to reinforce the whole warren (every block tier and the core) from `level` to `level + 1`. */
+export function reinforcePrice(level: number): number {
+  return Math.round(REINFORCE_PRICE * REINFORCE_GROWTH ** level);
+}
+const REINFORCE_PRICE = 120;
+const REINFORCE_GROWTH = 1.5;
+
 /** Points to raise a tier from `level` to `level + 1`. */
 export function strengthPrice(tier: number, level: number): number {
   return Math.round(STRENGTH_PRICE[tier] * STRENGTH_GROWTH ** level);

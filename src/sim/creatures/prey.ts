@@ -197,6 +197,8 @@ function runHome(pop: Population, c: Creature, threat: Creature, home: HomeArea)
 
 /** Walks back home when there is nothing better to do. */
 function goHome(pop: Population, c: Creature, home: HomeArea): void {
+  // Keep walking (home, or around when there was no way home) rather than searching again each time.
+  if (c.activity === 'wander' && c.path.length > c.step) return;
   if (routeHome(pop, c, home, false)) c.activity = 'wander';
   else pop.wander(c, 8);
 }

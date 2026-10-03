@@ -55,9 +55,21 @@ to every material, and share what you make as files that anyone can drop into th
     10:00 and 20:00 bring a huge red **boss**. Every sixth wave is themed: a Fox Swarm, Tiger Hunt,
     Bear Siege or Hawk Raid. The waves for a seed are always the same.
   - Rabbits are **defenders** (red scarves), which man the lookout posts and shoot at predators
-    they can see, or **breeders**, which keep eating, drinking and raising young, and run
-    back inside the warren when predators come. The − and + buttons set how many defend. Extra
-    defenders need extra Lookout Posts to shoot from. A warren holds up to 40 rabbits.
+    they can see, or **breeders**, which keep eating and raising young (by night too, resting in
+    the warren), and run back inside when predators come. The − and + buttons set how many defend.
+    Extra defenders need extra Lookout Posts to shoot from.
+  - **Room**: a warren has room for a rabbit per 4 cells of open ground its walls enclose (🏠 in the
+    strip): 41 in the starter warren, up to 120. The colony breeds up to the room it has, and rabbits
+    in a warren grow up and breed 3 times as fast as wild ones, so a bigger warren soon means more
+    rabbits, and more defenders for its posts. Room changes only when you change the walls, not when
+    predators break them.
+  - **Your own warren**: **Design warren** (B) opens the warren designer, a builder with just the
+    warren's blocks and the core, starting from the starter warren. It shows what the design costs,
+    its lookout posts and its room, and what (if anything) stops it being played. Save it (Enter) to
+    play it at once, or pick it later in the new-world dialog. A design is played centred on dry
+    ground, with the herd around its core; **New round** keeps playing the same design.
+  - A warren has **exactly one core**, a 2×2 block 2 high. In the designer, placing the core moves
+    it; in a round it can't be built, moved or removed.
   - **Fortify** (F) builds and breaks warren blocks inside the orange area, against a block budget
     that **every wave adds to** (+30 with the first, a little more each wave), and points buy more.
     Five blocks, keys 1–5: **Wood**, **Stone**, **Brick** and **Iron walls**, each tougher and
@@ -76,12 +88,20 @@ to every material, and share what you make as files that anyone can drop into th
     rate of fire, range, piercing, blast or shots at a time, or help the warren: mending blocks,
     thicker fur, more young, more budget or more points. The longer the warren holds, the rarer and
     stronger the cards.
-  - The **Armory** (**U**) shows every weapon and what unlocks it, sets the main weapon and how many
-    defenders carry others, and buys strength for each block tier (+25% hit points a level).
-    **Repair** mends damaged blocks for points.
+  - The **Shop** (**U**) has everything in one place, and pauses the round while it's open:
+    - **More block budget** (+100) for points.
+    - **Expand the warren**: a new ring of stone walls 4 blocks out, with lookout posts along every
+      other top block, a rabbit gap in each side and steps up inside two corners. It costs block
+      budget, and shows the room it makes before you build it. Expanding again builds the next ring
+      out, until the warren reaches the edge of the building area or 120 rabbits.
+    - **Repair everything**: mends the most worn blocks first, and the core.
+    - **Reinforce the warren**: +25% hit points for every block and the core, 8 levels.
+    - The weapons, with what unlocks each (defenders always carry the best one unlocked), and the
+      perks taken.
   - Kills and waves earn points. The round ends when the core falls, and the summary shows how long
     it held out. Predators get tougher every minute, and from 20:00 every wave is
-    far tougher than the last: a new player lasts about 10 minutes, a fully upgraded one about 20.
+    far tougher than the last: a new player lasts about 10 minutes, and a fully upgraded one about
+    20, or a little past it with a warren grown to its full size.
   - **Clover and the Warren Council**: every round earns Clover for time survived, each 5-minute
     milestone, kills and achievements. Spend it at the **Warren Council** (from the round summary or
     the World menu) on permanent upgrades that make every later round easier: more damage, tougher
@@ -90,8 +110,8 @@ to every material, and share what you make as files that anyone can drop into th
     flawless start, hunting each predator, veteran milestones and more) pay Clover too.
   - Progress is saved in the browser; **Export progress** in the Council saves it as a
     `.profile.json` file to back up or move to another browser.
-  - **Test bots** play Warren Defense in five styles (turtle, sharpshooter, breeder, balanced and
-    gambler), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
+  - **Test bots** play Warren Defense in six styles (turtle, sharpshooter, breeder, balanced,
+    gambler and expander), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
     bot round saves a `.replay.json`. **Watch a replay…** in the World menu plays one back exactly
     in the game. See [`bots/README.md`](bots/README.md).
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
@@ -116,9 +136,9 @@ The game is a static site with no server, hosted on GitHub Pages at
 | Mouse | Look (click the game to take control, Esc releases) |
 | W A S D · Space / Shift · Ctrl · wheel | Fly · rise / sink · boost · change speed |
 | Tab | Structure library: place, edit, duplicate, rename, export, import, delete |
-| B | Build a new structure (enter structure mode) |
+| B | Build a new structure (enter structure mode); in a Warren Defense world, design a warren |
 | F | Fortify the warren (Warren Defense worlds) |
-| U · K | Armory · choose a perk (Warren Defense worlds) |
+| U · K | Shop · choose a perk (Warren Defense worlds) |
 | M | World menu: switch, create, rename, export, import worlds; author name; spawn point |
 | H | Controls overlay |
 | P | Pause or carry on (wild and Warren Defense worlds; a screenshot elsewhere) |
