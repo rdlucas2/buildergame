@@ -1,12 +1,15 @@
 import type { BaseState } from '../../core/defense-state';
 import { AIR, VoxelGrid, type Size3 } from '../../core/voxel-grid';
-import { blockCost, blockHp } from './materials';
+import { CORE, blockCost, blockHp } from './materials';
 
 /** Size of the area a warren can be built in, centred on the base site. */
 export const BASE_SIZE: Size3 = { x: 48, y: 16, z: 48 };
 
 /** Material that marks a defender's post: defenders stand on top of it. */
 export const LOOKOUT = 'lookout';
+
+/** Hit points of the warren's core (before the block upgrades multiply them). */
+export const CORE_HP = 1500;
 
 
 /** What happened to a block that took damage. */
@@ -34,7 +37,10 @@ export class DefenseBase {
   onChange?: (x: number, y: number, z: number) => void;
   /** The same, for a view that draws the base (kept separate from the simulation's listener). */
   onViewChange?: (x: number, y: number, z: number) => void;
+  /** Damage the core has taken, in tenths of a hit point: its blocks share one pool. */
+  coreDamage = 0;
   private costCache = -1;
+  private coreCache: { version: number; cells: Array<{ x: number; y: number; z: number }> } | null = null;
   private postsCache: { version: number; posts: Array<{ x: number; y: number; z: number }> } | null = null;
   private footprintCache: { version: number; area: { x0: number; z0: number; x1: number; z1: number } | null } | null = null;
 
@@ -44,6 +50,7 @@ export class DefenseBase {
     this.grid = new VoxelGrid(size, state.voxels ? new Uint16Array(state.voxels) : undefined);
     this.palette = [...(state.palette ?? [])];
     this.damageMap = state.damage && state.damage.length === this.grid.length ? new Uint16Array(state.damage) : new Uint16Array(this.grid.length);
+    this.coreDamage = state.coreDamage ?? 0;
   }
 
   get size(): Size3 {
@@ -78,20 +85,60 @@ export class DefenseBase {
 
   maxHpAt(x: number, y: number, z: number): number {
     const m = this.materialAt(x, y, z);
+    if (m === CORE) return this.coreMaxHp;
     return m ? blockHp(m, this.strength, this.hpMultiplier) : 0;
   }
 
-  /** Hit points a block has left (0 for air). */
+  /** Hit points a block has left (0 for air). A core block has what the whole core has left. */
   hpAt(x: number, y: number, z: number): number {
     if (!this.contains(x, y, z)) return 0;
     const max = this.maxHpAt(x, y, z);
-    return max ? Math.max(0, max - this.damageMap[this.index(x, y, z)] / 10) : 0;
+    return max ? Math.max(0, max - this.damageAt(x, y, z) / 10) : 0;
   }
 
   /** Damage taken, from 0 (intact) to 1 (about to break). */
   wearAt(x: number, y: number, z: number): number {
     const max = this.maxHpAt(x, y, z);
-    return max ? Math.min(1, this.damageMap[this.index(x, y, z)] / 10 / max) : 0;
+    return max ? Math.min(1, this.damageAt(x, y, z) / 10 / max) : 0;
+  }
+
+  private damageAt(x: number, y: number, z: number): number {
+    return this.materialAt(x, y, z) === CORE ? this.coreDamage : this.damageMap[this.index(x, y, z)];
+  }
+
+  // ---- the core ----------------------------------------------------------------------------
+
+  /** Hit points of the whole core. */
+  get coreMaxHp(): number {
+    return Math.round(CORE_HP * this.hpMultiplier);
+  }
+
+  /** Hit points the core has left (0 once it has fallen, or when there is none). */
+  get coreHp(): number {
+    return this.coreCells().length ? Math.max(0, this.coreMaxHp - this.coreDamage / 10) : 0;
+  }
+
+  /** The core's blocks, in world cells (empty once it has fallen). */
+  coreCells(): Array<{ x: number; y: number; z: number }> {
+    if (this.coreCache && this.coreCache.version === this.shape) return this.coreCache.cells;
+    const cells: Array<{ x: number; y: number; z: number }> = [];
+    const slot = this.palette.indexOf(CORE) + 1;
+    if (slot > 0) {
+      const d = this.grid.data;
+      const { x: sx, z: sz } = this.grid.size;
+      for (let i = 0; i < d.length; i++) if (d[i] === slot) cells.push({ x: (i % sx) + this.origin.x, y: Math.floor(i / (sx * sz)), z: (Math.floor(i / sx) % sz) + this.origin.z });
+    }
+    this.coreCache = { version: this.shape, cells };
+    return cells;
+  }
+
+  /** Puts a fresh core of `w`×`w` blocks, `h` high, centred on (cx, cz). */
+  placeCore(cx: number, cz: number, w = 2, h = 2): void {
+    for (const c of this.coreCells()) this.set(c.x, c.y, c.z, null);
+    const x0 = cx - Math.floor((w - 1) / 2);
+    const z0 = cz - Math.floor((w - 1) / 2);
+    for (let y = 0; y < h; y++) for (let z = z0; z < z0 + w; z++) for (let x = x0; x < x0 + w; x++) this.set(x, y, z, CORE);
+    this.coreDamage = 0;
   }
 
   /** Sets a block (or clears it with null), fully repaired. Returns false outside the area. */
@@ -104,9 +151,25 @@ export class DefenseBase {
     return true;
   }
 
-  /** Damages a block by `amount` hit points; it breaks (and disappears) when they run out. */
+  /**
+   * Damages a block by `amount` hit points; it breaks (and disappears) when they run out. Damage to
+   * any core block comes off the whole core, which falls all at once.
+   */
   damage(x: number, y: number, z: number, amount: number): DamageResult {
     if (amount <= 0 || !this.solidAt(x, y, z)) return 'none';
+    if (this.materialAt(x, y, z) === CORE) {
+      this.coreDamage += Math.max(1, Math.round(amount * 10));
+      if (this.coreDamage < this.coreMaxHp * 10) {
+        this.version++;
+        return 'damaged';
+      }
+      for (const c of [...this.coreCells()]) {
+        this.grid.data[this.index(c.x, c.y, c.z)] = AIR;
+        this.changed(c.x, c.y, c.z);
+      }
+      this.coreDamage = 0;
+      return 'broken';
+    }
     const i = this.index(x, y, z);
     const max = this.maxHpAt(x, y, z) * 10;
     const dealt = Math.max(1, Math.round(amount * 10));
@@ -124,6 +187,13 @@ export class DefenseBase {
   /** Repairs up to `amount` hit points of a block's damage (all of it by default). Returns the hit points restored. */
   repair(x: number, y: number, z: number, amount = Infinity): number {
     if (!this.solidAt(x, y, z)) return 0;
+    if (this.materialAt(x, y, z) === CORE) {
+      const tenths = Math.min(this.coreDamage, Math.floor(amount * 10));
+      if (tenths <= 0) return 0;
+      this.coreDamage -= tenths;
+      this.version++;
+      return tenths / 10;
+    }
     const i = this.index(x, y, z);
     const tenths = Math.min(this.damageMap[i], Math.floor(amount * 10));
     if (tenths <= 0) return 0;
@@ -134,7 +204,7 @@ export class DefenseBase {
 
   /** Hit points of damage across every block. */
   totalDamage(): number {
-    let sum = 0;
+    let sum = this.coreCells().length ? this.coreDamage : 0;
     for (let i = 0; i < this.damageMap.length; i++) sum += this.damageMap[i];
     return sum / 10;
   }
@@ -154,9 +224,11 @@ export class DefenseBase {
     return this.grid.count();
   }
 
-  /** Every damaged block with its wear (0–1), in world cells. */
+  /** Every damaged block with its wear (0–1), in world cells. A damaged core counts once. */
   damaged(): Array<{ x: number; y: number; z: number; wear: number }> {
     const out: Array<{ x: number; y: number; z: number; wear: number }> = [];
+    const core = this.coreCells()[0];
+    if (core && this.coreDamage > 0) out.push({ ...core, wear: this.wearAt(core.x, core.y, core.z) });
     const { x: sx, z: sz } = this.grid.size;
     const dm = this.damageMap;
     for (let i = 0; i < dm.length; i++) {
@@ -227,6 +299,7 @@ export class DefenseBase {
       palette: [...this.palette],
       voxels: new Uint16Array(this.grid.data),
       damage: new Uint16Array(this.damageMap),
+      coreDamage: this.coreDamage,
     };
   }
 

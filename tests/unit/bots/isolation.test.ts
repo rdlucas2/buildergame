@@ -16,8 +16,8 @@ describe('the game never touches TypeSafe', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('only the bots use the SDK', () => {
+  it('only the TypeSafe brain and its offline mock use the SDK', () => {
     const users = files('bots').filter((f) => readFileSync(f, 'utf8').includes("from '@typesafe-ai/sdk'"));
-    expect(users).toEqual([join('bots', 'brains', 'typesafe.ts')]);
+    expect(users.sort()).toEqual([join('bots', 'brains', 'mock.ts'), join('bots', 'brains', 'typesafe.ts')]);
   });
 });

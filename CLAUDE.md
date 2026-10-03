@@ -39,3 +39,7 @@ Keep rules the code already knows in code: collision, path-finding, needs, safet
 The Warren Defense test bots in `bots/` are the project's TypeSafe feature (see `bots/README.md`).
 They run in Node only. A unit test fails if anything under `src/` imports the SDK or reads
 `TYPESAFE_API_KEY`.
+
+To iterate on Warren Defense without a browser or tokens, run `npm run bots:test -- --quick`: it
+plays headless rounds and checks the rules and balance. Use `--brain mock` to run the TypeSafe
+brain against its offline mock.

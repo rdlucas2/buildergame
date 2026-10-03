@@ -58,6 +58,8 @@ export class Population {
   history: Array<[number, number, number]> = [];
   /** Picks the behaviour for a creature; game modes replace it to add their own. */
   behaviourFor: (c: Creature) => Behaviour = (c) => (c.species === 'prey' ? PREY : WOLF);
+  /** Whether creatures get thirsty (a Warren Defense round turns it off: rabbits live on grass). */
+  needsWater = true;
   /** Population limits that replace the species' own (a game mode's carrying capacity). */
   caps: Partial<Record<CreatureSpecies, number>> = {};
   /** Called when a creature dies (after its tally is counted). */
@@ -244,7 +246,7 @@ export class Population {
       const resting = c.activity === 'rest' || c.activity === 'hide' || c.activity === 'ambush' || c.activity === 'guard';
       const slow = (c.activity === 'rest' ? 0.6 : 1) * (b.needsRate ? b.needsRate(this, c) : 1);
       c.satiety = Math.max(0, c.satiety - def.satietyDrain * dt * slow);
-      c.hydration = Math.max(0, c.hydration - def.hydrationDrain * dt * slow);
+      c.hydration = this.needsWater ? Math.max(0, c.hydration - def.hydrationDrain * dt * slow) : 1;
       const sprinting = c.activity === 'pounce' || c.activity === 'flee';
       if (moving) c.energy = Math.max(0, c.energy - def.energyDrainMoving * dt * (sprinting ? 2 : 1));
       else if (resting) c.energy = Math.min(1, c.energy + def.energyRegenResting * dt);

@@ -41,7 +41,10 @@ import { START_TIME, type Speed } from '../sim/clock';
 import type { ActionResult, Defense, DefenseAction } from '../sim/defense/defense';
 import { buyUpgrade, modifiersFor } from '../sim/defense/council';
 import { awardAchievements, finishRound, newRoundAchievements, type RoundResult, type RoundReward } from '../sim/defense/rewards';
-import { blockCost, blockHp } from '../sim/defense/materials';
+import { CORE, TIERS, WARREN_BLOCKS, blockCost, blockHp, tierOf } from '../sim/defense/materials';
+import { LOOKOUT } from '../sim/defense/base';
+import { describe as describeCriterion } from '../sim/defense/criteria';
+import { TIER_UNLOCKS } from '../sim/defense/unlocks';
 import { DEFENSE_GROUND } from '../sim/defense/replay';
 import type { DefenseObservation } from '../sim/defense/session';
 import { Ecosystem } from '../sim/ecosystem';
@@ -50,8 +53,6 @@ import type { Overlay } from '../render/terrain-view';
 import { DEFAULT_HOTBAR, StructureMode } from './structure-mode';
 import { WorldMode } from './world-mode';
 
-/** Fortify mode's starting hotbar: wall materials from cheap to tough, and lookout posts. */
-export const FORTIFY_HOTBAR = ['cobblestone', 'planks', 'stone_bricks', 'iron', 'lookout', 'log', 'brick', 'dirt', 'glass'];
 
 /** Ground size of Warren Defense worlds: plenty of room around the warren, and quick to simulate. */
 export { DEFENSE_GROUND };
@@ -119,7 +120,6 @@ export class Game {
     this.controls = new FlyControls(this.host.camera, this.host.canvas);
     this.materials = createVoxelMaterials();
     this.hotbar = [...worlds.getSetting<string[]>('hotbar', DEFAULT_HOTBAR)];
-    this.fortifyHotbar = [...worlds.getSetting<string[]>('fortifyHotbar', FORTIFY_HOTBAR)];
     this.hud = new Hud({
       onLibrary: () => this.openLibrary(),
       onWorld: () => this.openWorldMenu(),
@@ -269,11 +269,7 @@ export class Game {
   /** Hotbar click or tap: select a slot, or open every material when the slot is already selected. */
   private selectHotbarSlot(i: number): void {
     if (this.eco.fortify.active) {
-      if (i === this.fortifySlot) this.handleKey('KeyE');
-      else {
-        this.fortifySlot = i;
-        this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
-      }
+      if (i < WARREN_BLOCKS.length) this.selectBlock(i);
       return;
     }
     const sm = this.structureMode;
@@ -391,13 +387,9 @@ export class Game {
     if (defense && this.eco.fortify.active) {
       if (button === 1) {
         const m = this.eco.fortify.pick(defense);
-        if (m) {
-          const i = this.fortifyHotbar.indexOf(m);
-          if (i >= 0) this.fortifySlot = i;
-          else this.fortifyHotbar[this.fortifySlot] = m;
-          this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
-        }
-        return m !== null;
+        const i = WARREN_BLOCKS.findIndex((b) => b.material === m);
+        if (i >= 0) this.selectBlock(i);
+        return i >= 0;
       }
       const r = button === 0 ? this.eco.fortify.breakBlock(defense) : button === 2 ? this.eco.fortify.build(defense, this.fortifyMaterial) : null;
       if (!r) return false;
@@ -439,7 +431,12 @@ export class Game {
       openHelp();
       return true;
     }
-    if (code === 'KeyP') {
+    // P pauses wherever time runs (it is a screenshot elsewhere); F2 always takes one.
+    if (code === 'KeyP' && this.eco.active && !sm) {
+      toast(this.eco.togglePause() === 0 ? 'Paused: build, re-allocate and upgrade, then press P to carry on.' : `Running at ${this.eco.speed}×`, 'info', 1600);
+      return true;
+    }
+    if (code === 'KeyP' || code === 'F2') {
       this.screenshot();
       return true;
     }
@@ -451,18 +448,11 @@ export class Game {
     if (!sm && code === 'KeyK' && this.eco.defense) return this.eco.openPerks();
     if (!sm && this.eco.fortify.active) {
       if (/^Digit[1-9]$/.test(code)) {
-        this.fortifySlot = Number(code.slice(5)) - 1;
-        this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+        const i = Number(code.slice(5)) - 1;
+        if (i < WARREN_BLOCKS.length) this.selectBlock(i);
         return true;
       }
       switch (code) {
-        case 'KeyE':
-          openMaterialPicker(this.fortifyMaterial, (id) => {
-            this.fortifyHotbar[this.fortifySlot] = id;
-            void this.worlds.setSetting('fortifyHotbar', this.fortifyHotbar);
-            this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
-          });
-          return true;
         case 'KeyQ':
           return this.act(1);
         case 'Escape':
@@ -947,13 +937,41 @@ export class Game {
 
   // ---- Warren Defense: fortify ----------------------------------------------------------
 
-  private fortifySlot = 0;
-  /** Fortify mode keeps its own hotbar of building materials, separate from structure mode's. */
-  private fortifyHotbar: string[] = [];
+  /** Which of the warren blocks Fortify builds with (Stone wall to start). */
+  private fortifySlot = 1;
 
   private get fortifyMaterial(): string {
-    return this.fortifyHotbar[this.fortifySlot] ?? 'cobblestone';
+    return WARREN_BLOCKS[this.fortifySlot]?.material ?? 'cobblestone';
   }
+
+  private selectBlock(i: number): void {
+    this.fortifySlot = i;
+    this.refreshBlockBar();
+    const b = WARREN_BLOCKS[i];
+    const d = this.eco.defense;
+    const locked = d ? this.blockLock(d, b.material) : null;
+    toast(locked ? `${b.name} is locked. ${locked}` : `${b.name}: ${b.role}`, locked ? 'error' : 'info', 2600);
+  }
+
+  /** Why a block can't be built with yet (when its tier unlocks), or null. */
+  private blockLock(d: Defense, material: string): string | null {
+    const t = tierOf(material);
+    if (t < d.tiers) return null;
+    const c = TIER_UNLOCKS[t];
+    return c ? `${TIERS[t].name} unlocks once you ${describeCriterion(c).replace(/^\w/, (m) => m.toLowerCase())}.` : 'not unlocked yet.';
+  }
+
+  /** Fortify's bar of warren blocks, with costs, hit points and locks as they are now. */
+  private refreshBlockBar(): void {
+    const d = this.eco.defense;
+    if (!d) return;
+    this.blockBarKey = `${d.tiers}|${d.base.strength.join(',')}|${d.base.hpMultiplier}|${this.fortifySlot}`;
+    this.hud.setBlockBar(
+      WARREN_BLOCKS.map((b) => ({ ...b, cost: blockCost(b.material), hp: blockHp(b.material, d.base.strength, d.base.hpMultiplier), locked: this.blockLock(d, b.material), post: b.material === LOOKOUT })),
+      this.fortifySlot,
+    );
+  }
+  private blockBarKey = '';
 
   /** Turns Fortify mode (building the warren) on or off; with no argument, toggles it. */
   toggleFortify(on = !this.eco.fortify.active): void {
@@ -1074,9 +1092,9 @@ export class Game {
     this.hud.setHotbarVisible(!!sm || fortifying);
     if (fortifying) {
       this.hud.setMode(`Warren Defense: ${this.worldMode.world.name} — Fortify`);
-      this.hud.setHotbar(this.fortifyHotbar, this.fortifySlot);
+      this.refreshBlockBar();
       this.hud.setStructureButton('Build structure', 'B');
-      this.hud.setHint('Right click: build · Left click: remove · 1–9: material · E: all materials · F or Esc: done');
+      this.hud.setHint('Right click: build · Left click: remove · 1–5: block (5 is a lookout post) · F or Esc: done');
     } else if (sm) {
       this.hud.setMode(
         !sm.editing ? 'Structure mode' : sm.asCopy ? `Structure mode — copy of "${sm.editing.name}"` : `Structure mode — editing "${sm.editing.name}"`,
@@ -1114,11 +1132,13 @@ export class Game {
       const f = this.eco.fortify;
       const at = f.voxel ? defense.base.materialAt(f.voxel.x, f.voxel.y, f.voxel.z) : null;
       const hp = f.voxel && at ? ` · ${Math.ceil(defense.base.hpAt(f.voxel.x, f.voxel.y, f.voxel.z))}/${defense.base.maxHpAt(f.voxel.x, f.voxel.y, f.voxel.z)} hp` : '';
+      const key = `${defense.tiers}|${defense.base.strength.join(',')}|${defense.base.hpMultiplier}|${this.fortifySlot}`;
+      if (key !== this.blockBarKey) this.refreshBlockBar();
+      const named = (m: string) => WARREN_BLOCKS.find((w) => w.material === m)?.name ?? getMaterial(m)?.name ?? m;
+      // Two short lines, clear of the strips: the block being built is shown on the bar.
       this.hud.setStatus([
-        `Budget ${defense.base.cost()}/${defense.budget} · ${defense.base.blocks()} blocks`,
-        `Building with ${getMaterial(this.fortifyMaterial)?.name ?? this.fortifyMaterial} (cost ${blockCost(this.fortifyMaterial)}, ${blockHp(this.fortifyMaterial, defense.base.strength, defense.base.hpMultiplier)} hp)`,
-        at ? `Aiming at ${getMaterial(at)?.name ?? at}${hp}` : f.place ? 'Aiming at an empty spot' : 'Aim inside the orange outline',
-        pos,
+        `▣ ${defense.base.cost()}/${defense.budget}, +${defense.waveBudget} next wave · ${defense.base.posts().length} posts, ${defense.manned} manned`,
+        at ? `Aiming at ${named(at)}${hp}${at === LOOKOUT ? ' · a defender stands on top' : at === CORE ? ' · the core' : ''}` : f.place ? 'Aiming at an empty spot' : 'Aim inside the orange outline',
       ]);
       return;
     }

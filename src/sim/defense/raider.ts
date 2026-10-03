@@ -20,9 +20,10 @@ const POUNCE_RANGE = 6;
 const CHEW_REACH = 1.3;
 
 /**
- * A predator of a defense wave: it heads for the nearest rabbit, finds its way into the warren
+ * A predator of a defense wave: it heads for the nearest breeder, finds its way into the warren
  * (squeezing through gaps if it is small enough, otherwise breaking through the weakest wall), and
- * bites. It has no needs and never breeds.
+ * bites; any rabbit that comes within reach gets bitten too. Once no breeders are left it goes for
+ * the warren's core and gnaws at it. It has no needs and never breeds.
  */
 export function makeRaider(ctx: DefenseContext): Behaviour {
   return {
@@ -34,12 +35,17 @@ export function makeRaider(ctx: DefenseContext): Behaviour {
 }
 
 function decideRaider(ctx: DefenseContext, pop: Population, c: Creature): void {
-  const prey = pop.nearest(c, 'prey', 2000);
-  if (!prey) {
-    if (c.path.length <= c.step) headFor(pop, c, ctx.site.x, ctx.site.z);
-    c.activity = 'raid';
+  // A rabbit right there gets bitten, defender or not.
+  const near = pop.nearest(c, 'prey', BITE_REACH, (o) => Math.abs(o.y - c.y) <= 1);
+  if (near) {
+    c.target = near.id;
+    c.activity = 'bite';
+    c.path = [];
     return;
   }
+  // Breeders first: they are the warren's future.
+  const prey = pop.nearest(c, 'prey', 2000, (o) => o.role !== 'defender');
+  if (!prey) return decideCore(ctx, pop, c);
   c.target = prey.id;
   const d = Math.hypot(prey.x - c.x, prey.z - c.z);
   if (d <= BITE_REACH && Math.abs(prey.y - c.y) <= 1) {
@@ -80,6 +86,17 @@ function decideRaider(ctx: DefenseContext, pop: Population, c: Creature): void {
 
 function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number): boolean {
   const def = defOf(c);
+  // At the core with no breeders left: gnaw it.
+  if (c.target === -1 && c.activity !== 'bite') {
+    const b = ctx.coreNear(c);
+    if (b) {
+      c.activity = 'breach';
+      c.path = [];
+      c.heading = Math.atan2(b.x + 0.5 - c.x, b.z + 0.5 - c.z);
+      ctx.chew(c, b.x, b.y, b.z, def.blockDamage * toughness(c) * dt);
+      return true;
+    }
+  }
   if (c.activity === 'bite') {
     const prey = pop.get(c.target);
     if (!prey || prey.deadFor >= 0 || Math.abs(prey.y - c.y) > 1 || Math.hypot(prey.x - c.x, prey.z - c.z) > BITE_REACH + 0.3) {
@@ -117,6 +134,43 @@ function actRaider(ctx: DefenseContext, pop: Population, c: Creature, dt: number
     c.path = [];
   }
   return true;
+}
+
+/** With no breeders left: make for the core, through the walls, and gnaw at it. */
+function decideCore(ctx: DefenseContext, pop: Population, c: Creature): void {
+  c.target = -1;
+  // Already at it: keep gnawing (no planning needed).
+  if (ctx.coreNear(c)) {
+    c.activity = 'breach';
+    c.path = [];
+    return;
+  }
+  const core = ctx.coreSpot();
+  const planning = c.activity === 'raid' || c.activity === 'breach';
+  if (planning && c.path.length > c.step && c.wait > 0) return;
+  c.activity = 'raid';
+  if (!core) {
+    if (c.path.length <= c.step) headFor(pop, c, ctx.site.x, ctx.site.z);
+    return;
+  }
+  const d = Math.hypot(core.x - c.x, core.z - c.z);
+  if (d > APPROACH) {
+    const k = (d - APPROACH * 0.6) / d;
+    headFor(pop, c, c.x + (core.x - c.x) * k, c.z + (core.z - c.z) * k);
+    c.wait = REPLAN;
+    return;
+  }
+  const steps = ctx.fieldPath(c, FIELD_STEPS);
+  if (steps.length > 0) {
+    c.path = steps;
+    c.step = 0;
+    c.wait = REPLAN;
+    return;
+  }
+  // Off the field (or crowded out of the cells beside the core): edge closer, and try again soon.
+  if (c.path.length <= c.step && d > 3) headFor(pop, c, core.x, core.z);
+  else if (c.path.length <= c.step) pop.wander(c, 2);
+  c.wait = 1;
 }
 
 /** Plans a walk to a ground cell near (x, z). */

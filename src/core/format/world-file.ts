@@ -82,6 +82,7 @@ const DefenseSchema = z.object({
     palette: z.array(z.string().min(1).max(64)).max(1024),
     voxels: rle,
     damage: rle,
+    coreDamage: int.min(0).max(1e12).default(0),
   }),
   clock: z.number().min(0).max(1e9),
   wave: int.min(0).max(1_000_000),
@@ -259,6 +260,7 @@ function encodeDefense(d: DefenseState): DefenseFile {
       palette: [...d.base.palette],
       voxels: { encoding: 'rle-u16-base64', data: encodeVoxelData(d.base.voxels) },
       damage: { encoding: 'rle-u16-base64', data: encodeVoxelData(d.base.damage) },
+      coreDamage: d.base.coreDamage ?? 0,
     },
     clock: d.clock,
     wave: d.wave,
@@ -303,7 +305,7 @@ function decodeDefense(f: DefenseFile): DefenseState {
   }
   return {
     site: { ...f.site },
-    base: { origin: { ...f.base.origin }, size: { ...size }, palette: [...f.base.palette], voxels, damage },
+    base: { origin: { ...f.base.origin }, size: { ...size }, palette: [...f.base.palette], voxels, damage, coreDamage: f.base.coreDamage },
     clock: f.clock,
     wave: f.wave,
     nextWaveAt: f.nextWaveAt,

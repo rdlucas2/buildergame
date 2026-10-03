@@ -10,6 +10,7 @@ import { modifiersFor } from '../src/sim/defense/council';
 import { DEFENSE_GROUND } from '../src/sim/defense/replay';
 import { clock, type Brain } from './brain';
 import { HeuristicBrain } from './brains/heuristic';
+import { MockBrain } from './brains/mock';
 import { MissingKeyError, TypeSafeBrain } from './brains/typesafe';
 import { loadProfile } from './campaign';
 import { SimTable } from './drivers/sim';
@@ -38,6 +39,7 @@ const first = Number(a.seed);
 const modifiers = modifiersFor(loadProfile(a.profile!).upgrades);
 
 function brainFor(style: Style): Brain {
+  if (a.brain === 'mock') return new MockBrain(PERSONAS[style]);
   if (a.brain === 'typesafe') {
     try {
       return new TypeSafeBrain(PERSONAS[style]);

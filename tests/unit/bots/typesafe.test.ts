@@ -3,6 +3,7 @@ import { NO_MODIFIERS } from '../../../src/core/defense-state';
 import { DefenseSession } from '../../../src/sim/defense/session';
 import { buildOptions } from '../../../src/sim/defense/advisor';
 import type { View } from '../../../bots/brain';
+import { MockBrain } from '../../../bots/brains/mock';
 import { MissingKeyError, TypeSafeBrain } from '../../../bots/brains/typesafe';
 import { councilOffers, loadProfile } from '../../../bots/campaign';
 import { SimTable } from '../../../bots/drivers/sim';
@@ -128,5 +129,30 @@ describe('the TypeSafe brain', () => {
     expect((await brain.council(profile, offers)).buy).toBe(offers[1].id);
     const save = new TypeSafeBrain(PERSONAS.breeder, { apiKey: 'k', fetch: fakeApi(() => ({ upgrade: 'save' })).fetch, retry: { maxRetries: 0 } });
     expect((await save.council(profile, offers)).buy).toBeNull();
+  });
+});
+
+describe('the offline mock of the TypeSafe API', () => {
+  it('runs the whole TypeSafe pipeline with no key and no network, answering like the persona', async () => {
+    const seen: string[] = [];
+    const brain = new MockBrain(PERSONAS.breeder, { onExchange: (e) => seen.push(`${e.what}:${Object.keys(e.questions).sort().join(',')}`) });
+    expect(brain.kind).toBe('mock');
+    const modifiers = { ...NO_MODIFIERS };
+    const run = await playRound(new SimTable(4, modifiers), brain, { seed: 4, size: 512, modifiers, every: 10, maxSeconds: 120 });
+    expect(brain.api.requests).toBe(run.decisions.length);
+    expect(run.decisions.every((d) => !d.fallback && d.usage && d.probs?.defenders)).toBe(true);
+    expect(seen[0]).toBe('decision:build,defenders');
+    // The breeder's rules want few rabbits defending.
+    expect(run.decisions[0].why).toMatch(/\(few\)/);
+    expect(run.replay.player).toEqual({ style: 'breeder', brain: 'mock' });
+  });
+
+  it('with chaos, answers some requests badly, and the brain falls back each time', async () => {
+    const brain = new MockBrain(PERSONAS.turtle, { chaos: 1, seed: 3 });
+    const modifiers = { ...NO_MODIFIERS };
+    const run = await playRound(new SimTable(4, modifiers), brain, { seed: 4, size: 512, modifiers, every: 10, maxSeconds: 60 });
+    expect(run.decisions.every((d) => d.fallback)).toBe(true);
+    expect(run.decisions.some((d) => /not offered/.test(d.fallback!))).toBe(true);
+    expect(run.decisions.some((d) => /500/.test(d.fallback!))).toBe(true);
   });
 });

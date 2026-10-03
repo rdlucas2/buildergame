@@ -6,8 +6,17 @@ export const TICK_SECONDS = 0.1;
 export const DAY_SECONDS = 480;
 /** New wild worlds start at 7:00 in the morning. */
 export const START_TIME = DAY_SECONDS * (7 / 24);
-export const SPEEDS = [0, 1, 4, 16] as const;
-export type Speed = (typeof SPEEDS)[number];
+/** Playback speeds in wild worlds: pause, and fast enough to watch days go by. */
+export const SPEEDS: readonly number[] = [0, 1, 4, 16];
+/**
+ * Playback speeds in Warren Defense: pause, and gentle steps up from normal, so there is time to
+ * build, re-allocate and upgrade between waves.
+ */
+export const DEFENSE_SPEEDS: readonly number[] = [0, 1, 1.5, 2, 3];
+/** The fastest the simulation may run (bots and tests may use any speed up to this). */
+export const MAX_SPEED = 16;
+/** Simulation seconds per real second (0 is paused). */
+export type Speed = number;
 
 /** Fraction of the day in [0, 1): 0 is midnight, 0.5 is noon. */
 export function timeOfDay(time: number): number {

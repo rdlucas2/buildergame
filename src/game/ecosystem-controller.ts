@@ -8,7 +8,7 @@ import { OutlineBox } from '../render/highlight';
 import type { SceneHost } from '../render/scene';
 import type { VoxelMaterials } from '../render/voxel-materials';
 import { OVERLAYS, TerrainView, type Overlay } from '../render/terrain-view';
-import { DAY_SECONDS, SPEEDS, TICK_SECONDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
+import { DAY_SECONDS, DEFENSE_SPEEDS, MAX_SPEED, SPEEDS, TICK_SECONDS, TickAccumulator, daylight, dayNumber, formatClock, timeOfDay, type Speed } from '../sim/clock';
 import { KINDS, SPECIES, defOf, describeActivity, kindOf, maxHpOf, pickCreature, type Activity, type Creature } from '../sim/creatures';
 import type { Defense, DefenseAction, ActionResult } from '../sim/defense/defense';
 import { buildOptions, expand } from '../sim/defense/advisor';
@@ -253,8 +253,16 @@ export class EcosystemController {
       document.body.classList.add('defense');
     }
     this.acc.reset();
+    this.hud.setSpeeds(this.speeds);
+    // Warren Defense runs at its own, gentler speeds.
+    if (!this.speeds.includes(this.speed)) this.setSpeed(1);
     this.hud.setVisible(true);
     document.body.classList.add('wild');
+  }
+
+  /** The speeds offered in this world. */
+  get speeds(): readonly Speed[] {
+    return this.eco?.defense ? DEFENSE_SPEEDS : SPEEDS;
   }
 
   /** Throws away the current round and attaches the world afresh (a new round in the same world). */
@@ -345,6 +353,9 @@ export class EcosystemController {
         over: d.over,
         offers: d.offers.length,
         repairPrice: d.repairPrice,
+        coreHp: d.base.coreHp,
+        coreMax: d.base.coreMaxHp,
+        waveBudget: d.waveBudget,
       });
       const second = Math.floor(d.clock);
       if (second !== this.lastRoundSecond) {
@@ -354,7 +365,9 @@ export class EcosystemController {
       for (const e of d.events.splice(0)) {
         if (e.kind === 'wave') {
           const parts = Object.entries(e.counts).map(([k, n]) => countOf(k, n));
-          toast(`Wave ${e.n}${e.name ? ` · ${e.name}` : ''}: ${parts.join(', ')}`, e.boss ? 'error' : 'info', e.name ? 5000 : 3500);
+          toast(`Wave ${e.n}${e.name ? ` · ${e.name}` : ''}: ${parts.join(', ')} · +${e.budget} block budget`, e.boss ? 'error' : 'info', e.name ? 5000 : 3500);
+        } else if (e.kind === 'core') {
+          toast(`❤ The core is under attack! ${e.hp}/${e.max} left: repair it, and get breeders back to safety.`, 'error', 4000);
         } else if (e.kind === 'lost') {
           this.onRoundOver?.();
         } else if (e.kind === 'unlock') {
@@ -473,6 +486,7 @@ export class EcosystemController {
       site: { ...d.site },
       origin: { ...d.base.origin },
       posts: d.base.posts().map((p) => ({ ...p })),
+      manned: d.manned,
       damaged: d.base.damaged().length,
       stats: structuredClone(d.stats),
       fortifying: this.fortify.active,
@@ -515,17 +529,27 @@ export class EcosystemController {
     return this.eco?.snapshot();
   }
 
+  /** Sets the playback speed (any speed from 0, paused, to `MAX_SPEED`; the buttons offer a few). */
   setSpeed(s: Speed): void {
-    this.speed = s;
+    if (s > 0) this.lastRunning = s;
+    this.speed = Math.max(0, Math.min(MAX_SPEED, s));
     this.acc.reset();
     if (this.eco) this.hud.update(this.eco.time, s, this.eco.population.count('prey'), this.eco.population.count('predator'));
   }
 
   cycleSpeed(): Speed {
-    const i = SPEEDS.indexOf(this.speed);
-    this.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
+    const list = this.speeds;
+    const i = list.indexOf(this.speed);
+    this.setSpeed(list[(i + 1) % list.length]);
     return this.speed;
   }
+
+  /** Pauses, or carries on at the speed it ran at before. */
+  togglePause(): Speed {
+    this.setSpeed(this.speed === 0 ? this.lastRunning : 0);
+    return this.speed;
+  }
+  private lastRunning: Speed = 1;
 
   setOverlay(o: Overlay): void {
     this.overlay = o;
@@ -669,6 +693,8 @@ export interface DefenseInfo {
   site: { x: number; z: number };
   origin: { x: number; z: number };
   posts: Array<{ x: number; y: number; z: number }>;
+  /** Posts with a defender standing guard on them. */
+  manned: number;
   damaged: number;
   stats: DefenseStats;
   unlocked: string[];

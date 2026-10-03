@@ -30,6 +30,11 @@ export interface DefenseHudState {
   offers: number;
   /** Points to repair every damaged block (0 when nothing is damaged). */
   repairPrice: number;
+  /** The core's hit points left and in all. */
+  coreHp: number;
+  coreMax: number;
+  /** Block budget the next wave brings. */
+  waveBudget: number;
 }
 
 const PLURALS: Record<string, string> = { fox: 'foxes', wolf: 'wolves', boss: 'bosses' };
@@ -53,6 +58,8 @@ export function formatRoundTime(seconds: number): string {
 export class DefenseHud {
   readonly root: HTMLElement;
   private readonly clockEl = el('span', { class: 'def-clock', id: 'def-clock', title: 'Time survived' });
+  private readonly coreEl = el('span', { class: 'def-core', id: 'def-core', title: 'The warren core: predators go for it once no breeders are left. The round is lost when it falls.' });
+  private readonly coreBar = el('span', { class: 'def-core-bar' });
   private readonly waveEl = el('span', { class: 'def-wave', id: 'def-wave' });
   private readonly callBtn: HTMLButtonElement;
   private readonly pointsEl = el('span', { class: 'def-points', id: 'def-points', title: 'Points to spend' });
@@ -77,6 +84,7 @@ export class DefenseHud {
       'div',
       { class: 'def-strip', id: 'def-strip' },
       this.clockEl,
+      el('span', { class: 'def-group def-core-group' }, this.coreEl, el('span', { class: 'def-core-track' }, this.coreBar)),
       el('span', { class: 'def-group' }, this.waveEl, this.callBtn),
       this.pointsEl,
       el('span', { class: 'def-group' }, this.budgetEl, this.buyBtn),
@@ -95,14 +103,19 @@ export class DefenseHud {
   }
 
   update(s: DefenseHudState): void {
-    const key = JSON.stringify([Math.floor(s.clock), s.wave, Math.ceil(s.nextWaveIn), s.points, s.cost, s.budget, s.budgetPrice, s.defenders, s.breeders, s.allocation, s.fortifying, s.over, s.predators, s.offers, s.repairPrice]);
+    const key = JSON.stringify([Math.floor(s.clock), s.wave, Math.ceil(s.nextWaveIn), s.points, s.cost, s.budget, s.budgetPrice, s.defenders, s.breeders, s.allocation, s.fortifying, s.over, s.predators, s.offers, s.repairPrice, Math.ceil(s.coreHp), s.coreMax, s.waveBudget]);
     if (key === this.last) return;
     this.last = key;
     this.clockEl.textContent = `⏱ ${formatRoundTime(s.clock)}`;
-    this.waveEl.textContent = s.over ? 'Warren fallen' : s.wave === 0 ? `First wave in ${formatRoundTime(s.nextWaveIn)}` : `Wave ${s.wave} · next ${formatRoundTime(s.nextWaveIn)}${s.predators ? ` · ${s.predators} attacking` : ''}`;
+    this.waveEl.textContent = s.over ? 'Core fallen' : s.wave === 0 ? `First wave in ${formatRoundTime(s.nextWaveIn)}` : `Wave ${s.wave} · next ${formatRoundTime(s.nextWaveIn)}${s.predators ? ` · ${s.predators} attacking` : ''}`;
     this.callBtn.disabled = s.over || s.nextWaveIn < 1;
     this.pointsEl.textContent = `★ ${s.points}`;
+    const core = s.coreMax > 0 ? Math.max(0, s.coreHp / s.coreMax) : 0;
+    this.coreEl.textContent = `❤ ${Math.ceil(s.coreHp)}`;
+    this.coreBar.style.width = `${Math.round(core * 100)}%`;
+    this.coreBar.classList.toggle('low', core < 0.35);
     this.budgetEl.textContent = `▣ ${s.cost}/${s.budget}`;
+    this.budgetEl.title = `Blocks used against the warren budget. Every wave adds more: +${s.waveBudget} with the next one.`;
     this.buyBtn.textContent = `+100 (${s.budgetPrice}★)`;
     this.buyBtn.disabled = s.over || s.points < s.budgetPrice;
     this.rolesEl.textContent = `🛡 ${s.defenders} · 🥕 ${s.breeders}`;
@@ -135,7 +148,7 @@ export interface RoundSummary {
 
 /** The end of a round: how long the warren held out and what happened, with a way to go again. */
 export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => void; onCouncil?: () => void }): PanelHandle {
-  const panel = openPanel('The warren has fallen', { id: 'round-summary' });
+  const panel = openPanel('The core has fallen', { id: 'round-summary' });
   // Elites and bosses are counted under their kind too; they get their own mention.
   const ranks = (['boss', 'elite'] as const).filter((r) => s.stats.killsOf[r]).map((r) => countOf(r, s.stats.killsOf[r]));
   const kills = Object.entries(s.stats.killsOf)
@@ -144,7 +157,7 @@ export function openRoundSummary(s: RoundSummary, handlers: { onRestart: () => v
     .map(([k, n]) => countOf(k, n))
     .join(', ');
   panel.body.append(
-    el('p', {}, `Your rabbits held out for ${formatRoundTime(s.clock)} against ${s.waves} wave${s.waves === 1 ? '' : 's'}.`),
+    el('p', {}, `The core held out for ${formatRoundTime(s.clock)} against ${s.waves} wave${s.waves === 1 ? '' : 's'}.`),
     el(
       'div',
       { class: 'stat-row' },

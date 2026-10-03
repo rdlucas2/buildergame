@@ -8,9 +8,6 @@ import type { DefenseObservation } from '../../src/sim/defense/session';
 import type { BotAction, OptionSummary } from '../brain';
 import type { ActOutcome, Table } from '../play';
 
-/** The game's own speeds; a bot plays at one of them. */
-export const BROWSER_SPEEDS = [1, 4, 16] as const;
-
 const ROOT = resolve(import.meta.dirname, '../..');
 /** Software WebGL, as in the end-to-end tests, so the game renders without a GPU. */
 const GL_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
@@ -133,7 +130,7 @@ export class BrowserTable implements Table {
   }
 
   async resume(): Promise<void> {
-    await this.page.evaluate((s) => window.__game!.ecoSpeed(s as 1 | 4 | 16), this.speed);
+    await this.page.evaluate((s) => window.__game!.ecoSpeed(s), this.speed);
   }
 
   async hash(): Promise<string> {

@@ -12,7 +12,7 @@ to every material, and share what you make as files that anyone can drop into th
   farmhouse, a modern house, the Eiffel Tower, the Arc de Triomphe and a rabbit warren for wild
   worlds. Editing one saves your own copy; the built-in original never changes. They are defined in code under `src/examples/`.
 - **Wild worlds**: choose "Wild" when creating a world to get generated ponds and streams,
-  grass, and a day/night cycle with pause, 1×, 4× and 16× speed. Grass grows only where sunlight
+  grass, and a day/night cycle with pause (P), 1×, 4× and 16× speed. Grass grows only where sunlight
   reaches the ground, so roofs starve the ground beneath them while open courtyards stay green. The
   Nature panel, opened with N, explains the rules and switches between overlays for food, blocked sky,
   water and safety from wolves.
@@ -36,6 +36,14 @@ to every material, and share what you make as files that anyone can drop into th
 - **Warren Defense**: choose "Warren Defense" when creating a world for a tower defense round on top
   of the wild-world simulation. Rabbits hold a walled warren against waves of predators that get
   tougher the longer the warren stands.
+  - **The core**, a glowing pink 2×2 block in the middle of the warren, is what you defend: the round
+    is lost when it falls. Predators go for the breeders first; once no breeders are left, they make
+    for the core and gnaw at it (hawks dive at it unless it is roofed over). Its health is the ❤ in
+    the strip, and Repair mends it with the walls.
+  - Rabbits in a warren need no water: they live on the grass inside, and the warren goes on any dry
+    ground.
+  - **Speeds**: pause (**P**), 1×, 1.5×, 2× and 3×, so there is time to build, re-allocate and
+    upgrade. Build and buy while paused.
   - Waves come on a clock: the first at 0:30, then about one a minute, whether or not the last one
     is beaten. **Call now** brings the next wave early for bonus points.
   - Foxes are fast and weak, and the only predators that fit through 1-high gaps. Wolves and badgers
@@ -50,11 +58,15 @@ to every material, and share what you make as files that anyone can drop into th
     they can see, or **breeders**, which keep eating, drinking and raising young, and run
     back inside the warren when predators come. The − and + buttons set how many defend. Extra
     defenders need extra Lookout Posts to shoot from. A warren holds up to 40 rabbits.
-  - **Fortify** (F) builds and breaks warren blocks inside the orange area, against a block budget.
-    Stronger materials hold out longer and cost more: soft blocks, wood, stone, masonry and metal.
-    Masonry unlocks at 3:00 (or 600 points) and metal at 8:00 (or 3000 points). A **Lookout Post**
-    block makes a defender post on top of it. Library structures can be stamped into the warren
-    too.
+  - **Fortify** (F) builds and breaks warren blocks inside the orange area, against a block budget
+    that **every wave adds to** (+30 with the first, a little more each wave), and points buy more.
+    Five blocks, keys 1–5: **Wood**, **Stone**, **Brick** and **Iron walls**, each tougher and
+    dearer (brick unlocks at 3:00 or 600 points, iron at 8:00 or 3000 points), and the **Lookout
+    post**. The bar shows each block's cost and hit points, and a lock on those not unlocked yet.
+  - **Lookout posts** are the yellow blocks with a red flag. A defender stands on top of each, and
+    every defender needs one. Make the top block of a wall a post, so defenders can walk the wall from
+    post to post. Fortify shows how many posts there are and how many are manned. Library structures
+    can be stamped into the warren too.
   - **Weapons** unlock as the round goes on: slingshot, bow, crossbow, musket, rifle, shotgun,
     cannon, laser and plasma rifle. Each unlocks with time survived, or sooner with points, kills
     with the weapon before it, or kills of a particular predator. Defenders take up a stronger
@@ -67,8 +79,8 @@ to every material, and share what you make as files that anyone can drop into th
   - The **Armory** (**U**) shows every weapon and what unlocks it, sets the main weapon and how many
     defenders carry others, and buys strength for each block tier (+25% hit points a level).
     **Repair** mends damaged blocks for points.
-  - Kills and waves earn points. The round ends when the last rabbit falls, and the summary shows
-    how long the warren held out. Predators get tougher every minute, and from 20:00 every wave is
+  - Kills and waves earn points. The round ends when the core falls, and the summary shows how long
+    it held out. Predators get tougher every minute, and from 20:00 every wave is
     far tougher than the last: a new player lasts about 10 minutes, a fully upgraded one about 20.
   - **Clover and the Warren Council**: every round earns Clover for time survived, each 5-minute
     milestone, kills and achievements. Spend it at the **Warren Council** (from the round summary or
@@ -109,7 +121,8 @@ The game is a static site with no server, hosted on GitHub Pages at
 | U · K | Armory · choose a perk (Warren Defense worlds) |
 | M | World menu: switch, create, rename, export, import worlds; author name; spawn point |
 | H | Controls overlay |
-| P | Save a screenshot |
+| P | Pause or carry on (wild and Warren Defense worlds; a screenshot elsewhere) |
+| F2 | Save a screenshot |
 | Ctrl+Z / Ctrl+Y | Undo / redo (blocks in structure mode, placements in world mode) |
 
 On phones and tablets the game switches to touch controls automatically: a left thumbstick to
@@ -147,6 +160,7 @@ npm run build      # production build in dist/
 npm run balance    # headless Warren Defense rounds over many seeds, per policy and upgrade profile
 npm run bots       # test bots play Warren Defense: headless or in a browser, rules or TypeSafe AI
 npm run bots:compare  # the bots' play styles side by side over several seeds
+npm run bots:test  # scenario checks of the rules and balance: headless, offline, no tokens
 ```
 
 The game exposes `window.__game` for automation (the end-to-end tests drive it through this API).

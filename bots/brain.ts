@@ -62,7 +62,8 @@ export interface CouncilDecision {
 
 /** Makes a bot's decisions. Brains never touch the game; drivers apply what they decide. */
 export interface Brain {
-  readonly kind: 'heuristic' | 'typesafe';
+  /** What decides: plain rules, TypeSafe, or TypeSafe's pipeline against the offline mock. */
+  readonly kind: 'heuristic' | 'typesafe' | 'mock';
   readonly persona: Persona;
   decide(view: View): Promise<Decision>;
   /** Between rounds: one Warren Council purchase at a time (asked again until it says null). */
