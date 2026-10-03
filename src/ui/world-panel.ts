@@ -12,6 +12,7 @@ export interface WorldActions {
   onSetAuthor: (name: string) => void;
   onSetSpawn: () => void;
   onCouncil: () => void;
+  onWatchReplay: () => void;
 }
 
 export interface WorldPanelState {
@@ -36,6 +37,7 @@ export function openWorldPanel(state: WorldPanelState, actions: WorldActions): P
       el('button', { class: 'btn', id: 'world-export', onclick: actions.onExport }, 'Export current (.world.zip)'),
       el('button', { class: 'btn', id: 'world-import', onclick: actions.onImport }, 'Import .world.zip…'),
       el('button', { class: 'btn', id: 'world-council', onclick: actions.onCouncil, title: 'Permanent upgrades for Warren Defense, bought with Clover' }, '🍀 Warren Council'),
+      el('button', { class: 'btn', id: 'world-replay', onclick: actions.onWatchReplay, title: 'Watch a recorded Warren Defense round (a .replay.json from the test bots)' }, '▶ Watch a replay…'),
     ),
     el('label', { class: 'field' }, 'Author name', authorInput),
   );

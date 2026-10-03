@@ -2,7 +2,8 @@ import { decodeWorldBundle, encodeWorldBundle, resolveBundleConflicts } from '..
 import { base64ToBytes, bytesToBase64 } from '../core/format/rle';
 import { serializeStructure, structureDownloadName } from '../core/format/structure-file';
 import { worldDownloadName } from '../core/format/world-file';
-import { decodeProfileFile, encodeProfileFile } from '../core/format/profile-file';
+import { decodeProfileFile, encodeProfileFile, parseProfile } from '../core/format/profile-file';
+import { decodeReplay } from '../core/format/replay-file';
 import type { DefenseModifiers } from '../core/defense-state';
 import type { PlayerProfile } from '../core/profile';
 import { newId } from '../core/ids';
@@ -30,16 +31,19 @@ import { Hud } from '../ui/hud';
 import { openLibraryPanel, type LibraryTab } from '../ui/library-panel';
 import { openMaterialPicker } from '../ui/material-picker';
 import { closePanel, isPanelOpen, onPanelChange } from '../ui/panel';
+import { setBotOverlay } from '../ui/bot-overlay';
 import { toast } from '../ui/toast';
 import { openWorldPanel } from '../ui/world-panel';
 import { FlyControls, isTypingTarget, type Pose } from './fly-controls';
 import { TouchControls, type TouchActionId, type TouchContext } from './touch-controls';
-import { EcosystemController, type CreatureInfo, type DefenseInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
+import { EcosystemController, type ActResult, type CreatureInfo, type DefenseInfo, type EcosystemCell, type EcosystemInfo } from './ecosystem-controller';
 import { START_TIME, type Speed } from '../sim/clock';
 import type { ActionResult, Defense, DefenseAction } from '../sim/defense/defense';
 import { buyUpgrade, modifiersFor } from '../sim/defense/council';
 import { awardAchievements, finishRound, newRoundAchievements, type RoundResult, type RoundReward } from '../sim/defense/rewards';
 import { blockCost, blockHp } from '../sim/defense/materials';
+import { DEFENSE_GROUND } from '../sim/defense/replay';
+import type { DefenseObservation } from '../sim/defense/session';
 import { Ecosystem } from '../sim/ecosystem';
 import { randomSeed } from '../sim/rng';
 import type { Overlay } from '../render/terrain-view';
@@ -50,7 +54,7 @@ import { WorldMode } from './world-mode';
 export const FORTIFY_HOTBAR = ['cobblestone', 'planks', 'stone_bricks', 'iron', 'lookout', 'log', 'brick', 'dirt', 'glass'];
 
 /** Ground size of Warren Defense worlds: plenty of room around the warren, and quick to simulate. */
-export const DEFENSE_GROUND = 512;
+export { DEFENSE_GROUND };
 
 const HOLD_DELAY = 0.25;
 const HOLD_REPEAT = 0.1;
@@ -785,6 +789,13 @@ export class Game {
           },
           onSetAuthor: (name) => void this.worlds.setAuthor(name.trim()),
           onCouncil: () => this.openCouncil(),
+          onWatchReplay: async () => {
+            const files = await pickFiles('.json,application/json', false);
+            if (!files[0]) return;
+            const err = await this.watchReplay(await readFileText(files[0]));
+            if (err) toast(err, 'error', 5000);
+            else closePanel();
+          },
           onSetSpawn: async () => {
             const pose = this.controls.getPose();
             this.worldMode.load({ ...this.currentWorld(), spawn: { position: pose.position, yaw: pose.yaw, pitch: pose.pitch } });
@@ -804,12 +815,48 @@ export class Game {
    * Creates and opens a new world. Wild worlds get terrain, grass and day/night from a fresh seed;
    * Warren Defense worlds also get a walled warren and the first round of waves.
    */
-  async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number } = {}): Promise<World> {
+  async createWorld(name: string, opts: { wild?: boolean; defense?: boolean; seed?: number; modifiers?: DefenseModifiers } = {}): Promise<World> {
     const seed = opts.seed ?? randomSeed();
-    const w = opts.defense ? newDefenseWorld(name, seed, this.roundModifiers()) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
+    const w = opts.defense ? newDefenseWorld(name, seed, opts.modifiers ?? this.roundModifiers()) : createWorld({ name, ...(opts.wild ? { ecosystem: { seed, time: START_TIME } } : {}) });
     await this.worlds.save(w);
     await this.switchWorld(w.id);
     return w;
+  }
+
+  /**
+   * Watches a recorded round (a `.replay.json` from the test bots, as text or parsed): opens a new
+   * Warren Defense world with the recording's seed and upgrades and plays its actions back at the
+   * ticks they were taken. Resolves with why it couldn't, or null.
+   */
+  async watchReplay(input: unknown): Promise<string | null> {
+    let replay;
+    try {
+      replay = decodeReplay(input);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    if (replay.size !== DEFENSE_GROUND) return `This replay is for a ${replay.size}-wide world; Warren Defense worlds are ${DEFENSE_GROUND} wide.`;
+    const label = `${replay.player.style} (${replay.player.brain})`;
+    // Paused while the round is set up, so no tick runs before the actions are scheduled.
+    const speed = this.eco.speed;
+    this.eco.setSpeed(0);
+    await this.createWorld(`Replay: ${label}`, { defense: true, seed: replay.seed, modifiers: replay.modifiers });
+    this.toggleFortify(false);
+    this.eco.playReplay(replay.actions, replay.ticks, label);
+    this.eco.setSpeed(speed === 0 ? 1 : speed);
+    toast(`Watching ${label}: ${replay.actions.length} actions over ${Math.floor(replay.ticks / 600)}:${String(Math.floor((replay.ticks / 10) % 60)).padStart(2, '0')}. Use the speed buttons to fast-forward.`, 'info', 5000);
+    return null;
+  }
+
+  /** Replaces the player's Warren Defense progress (a profile file, or a bare profile). */
+  async importProfile(input: unknown): Promise<string | null> {
+    try {
+      const p = (input as { format?: unknown } | null)?.format !== undefined ? decodeProfileFile(input) : parseProfile(input);
+      await this.profile.save(p);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
   }
 
   /** Starts a fresh round in the current Warren Defense world (a new seed, the starter warren). */
@@ -1175,6 +1222,14 @@ export class Game {
       ecoHovered: () => g.eco.hovered()?.id ?? null,
       defense: () => g.eco.defenseInfo(),
       defenseApply: (action) => g.eco.applyDefense(action),
+      defenseObserve: () => g.eco.observe(),
+      defenseOptions: () => g.eco.options(),
+      defenseAct: (input) => g.eco.act(input),
+      defenseHash: () => g.eco.stateHash(),
+      watchReplay: (input) => g.watchReplay(input),
+      replayState: () => g.eco.replayState(),
+      importProfile: (input) => g.importProfile(input),
+      botOverlay: (text) => setBotOverlay(text),
       fortify: (on) => g.toggleFortify(on),
       fortifyAim: () => (g.eco.fortify.active ? { voxel: g.eco.fortify.voxel, place: g.eco.fortify.place } : null),
       restartRound: (seed) => g.restartRound(seed),
@@ -1281,6 +1336,22 @@ export interface GameDebug {
   defenseSpawn(kind: CreatureKind, x: number, z: number, rank?: PredatorRank): number | null;
   /** Applies a Warren Defense action as the player would (allocate, call a wave, build...). */
   defenseApply(action: DefenseAction): ActionResult;
+  /** The round as the test bots see it (`observeRound`). */
+  defenseObserve(): DefenseObservation | null;
+  /** Ready-made build moves for the warren right now (`buildOptions`). */
+  defenseOptions(): Array<{ id: string; label: string; description: string; budget: number; points: number }>;
+  /** Applies an action, or a build option by id; says at which round tick (for replays). */
+  defenseAct(input: DefenseAction | { option: string }): ActResult;
+  /** A fingerprint of the simulation state (`stateHash`). */
+  defenseHash(): string | null;
+  /** Watches a `.replay.json` (text or parsed); resolves with why it couldn't, or null. */
+  watchReplay(input: unknown): Promise<string | null>;
+  /** The replay being watched: the tick it ends at, the current tick, and whether it's done. */
+  replayState(): { ticks: number; tick: number; done: boolean } | null;
+  /** Replaces the Warren Defense profile (a profile file or a bare profile); returns an error or null. */
+  importProfile(input: unknown): Promise<string | null>;
+  /** Shows (or with null, hides) the corner panel a test bot uses to say what it's doing. */
+  botOverlay(text: string | null): void;
   fortify(on: boolean): void;
   /** Where Fortify mode is aiming: the block under the crosshair and where a new one would go. */
   fortifyAim(): { voxel: Vec3 | null; place: Vec3 | null } | null;

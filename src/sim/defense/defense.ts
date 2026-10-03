@@ -261,6 +261,33 @@ export class Defense implements DefenseContext {
     return this.outcome !== 'playing';
   }
 
+  // ---- replays ------------------------------------------------------------------------------
+
+  /** The current tick of the round (tenths of a second survived), as replays count them. */
+  get tickIndex(): number {
+    return Math.round(this.clock / TICK_SECONDS);
+  }
+
+  /** Told of every action that succeeds, with the tick it was taken at (to record a replay). */
+  recorder: ((tick: number, action: DefenseAction) => void) | null = null;
+
+  /** Actions to apply at given ticks (a replay), before each tick runs. */
+  private script: Array<{ tick: number; action: DefenseAction }> = [];
+
+  /** Schedules recorded actions; each is applied when the round reaches its tick, before it runs. */
+  schedule(entries: ReadonlyArray<{ tick: number; action: DefenseAction }>): void {
+    this.script = [...this.script, ...entries].sort((a, b) => a.tick - b.tick);
+  }
+
+  /** Called by the ecosystem at the very start of a tick: applies what was scheduled for now. */
+  beforeTick(): void {
+    const now = this.tickIndex;
+    while (this.script.length > 0 && this.script[0].tick <= now) {
+      const { action } = this.script.shift()!;
+      this.apply(action);
+    }
+  }
+
   // ---- per tick ----------------------------------------------------------------------------
 
   /** Runs after the population's tick: waves, shots, roles, safety and the loss check. */
@@ -512,6 +539,12 @@ export class Defense implements DefenseContext {
 
   /** Applies a player's (or bot's) decision. Never throws; reports why when it can't. */
   apply(action: DefenseAction): ActionResult {
+    const r = this.applyNow(action);
+    if (r.ok) this.recorder?.(this.tickIndex, structuredClone(action));
+    return r;
+  }
+
+  private applyNow(action: DefenseAction): ActionResult {
     if (this.outcome !== 'playing') return { ok: false, reason: 'The round is over.' };
     switch (action.type) {
       case 'allocate': {

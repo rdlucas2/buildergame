@@ -61,6 +61,7 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
       ['Repair', 'Mends damaged blocks for points (the 🔧 button)'],
       ['Clover', 'Earned every round for time survived, milestones, kills and achievements'],
       ['Warren Council', 'Spend Clover on permanent upgrades (from the round summary or the World menu, M)'],
+      ['Watch a replay', 'Play back a test bot\'s recorded round (a .replay.json) from the World menu, M'],
     ],
   ],
   [

@@ -5,3 +5,4 @@ playwright-report/
 tests/e2e/screenshots/
 *.log
 .DS_Store
+bot-runs/

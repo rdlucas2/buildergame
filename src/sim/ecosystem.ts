@@ -142,6 +142,8 @@ export class Ecosystem {
   }
 
   tick(): void {
+    // Replayed actions land between ticks, exactly where they were first taken.
+    this.defense?.beforeTick();
     if (this.herdPending) this.spawnStarterHerd();
     this.time += TICK_SECONDS;
     this.ticks++;

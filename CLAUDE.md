@@ -35,3 +35,7 @@ Keep rules the code already knows in code: collision, path-finding, needs, safet
 - **Read the live docs first.** Before writing an integration, read `https://docs.typesafe.ai`,
   starting with `llms.txt`. In Claude Code cloud sessions that host must be allowed in the
   environment's network settings. If it isn't, say so rather than guessing API details.
+
+The Warren Defense test bots in `bots/` are the project's TypeSafe feature (see `bots/README.md`).
+They run in Node only. A unit test fails if anything under `src/` imports the SDK or reads
+`TYPESAFE_API_KEY`.

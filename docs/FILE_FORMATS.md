@@ -249,6 +249,45 @@ to back it up or move it to another browser; importing replaces the current prog
 | `achievements` | Achievements earned, with when (ISO date). |
 | `stats` | Lifetime totals: rounds played, seconds survived in all, the best time, score and wave of one round, total score and waves, and kills (overall, by weapon, by predator kind). Missing totals count as 0. |
 
+## Replay: `*.replay.json`
+
+A recorded Warren Defense round: its seed, the upgrades it started with, and every action taken in
+it with the round tick it was taken at. The round is deterministic, so replaying the actions on the
+same seed reproduces it exactly, in the browser or in Node. The test bots write one per round (see
+`bots/README.md`), and **Watch a replay…** in the World menu plays one back.
+
+```json
+{
+  "format": "buildergame.replay",
+  "version": 1,
+  "seed": 42,
+  "size": 512,
+  "modifiers": { "budget": 0, "rabbits": 0, "blockHp": 1, "damage": 1, "armour": 1, "fertility": 1,
+                 "startWeapon": 0, "rerolls": 0, "cards": 3 },
+  "player": { "style": "sharpshooter", "brain": "heuristic" },
+  "actions": [
+    { "tick": 0, "action": { "type": "allocate", "defenders": 8 } },
+    { "tick": 0, "action": { "type": "placeMany", "blocks": [{ "x": -6, "y": 3, "z": 9, "material": "lookout" }] } },
+    { "tick": 852, "action": { "type": "pickPerk", "index": 1 } }
+  ],
+  "ticks": 2407,
+  "result": { "clock": 240.7, "wave": 4, "score": 474, "kills": 25, "rabbitsLost": 0, "blocksBroken": 0,
+              "outcome": "playing", "hash": "55fef238" }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `seed`, `size` | The round's seed and ground size (Warren Defense worlds are 512 wide). |
+| `modifiers` | The Warren Council upgrades the round started with (as in a version 3 world's `defense.modifiers`). |
+| `player` | Who played: a bot style (or `player`) and what decided (`heuristic`, `typesafe`). |
+| `actions` | Every action that went through, in order. `tick` is tenths of a second of round time; an action is applied just before that tick runs. Actions are the same as the game's: `allocate`, `callWave`, `buyBudget`, `place`, `placeMany`, `remove`, `pickPerk`, `reroll`, `equip`, `loadout`, `strengthen`, `repair`. Unknown actions or fields make the file invalid. |
+| `ticks` | Where the recording ended. A replay stops there, or earlier if the warren falls. |
+| `result` | How the round ended, and `hash`: a fingerprint of the whole simulation at the end. A replay that ends with the same hash played out identically. |
+
+A round is set up as the game sets up a new Warren Defense world: created from the seed, saved,
+then restored. Watching a replay pays no Clover and earns no achievements.
+
 ## World bundle: `*.world.zip`
 
 A zip archive that makes a world self-contained for sharing:
