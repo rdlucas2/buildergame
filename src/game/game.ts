@@ -144,7 +144,20 @@ export class Game {
     this.eco.onToggleFortify = () => this.toggleFortify();
     this.eco.onRoundOver = () => this.showRoundSummary();
     this.eco.onRoundSecond = (d) => this.checkAchievements(d);
-    this.eco.attach(world);
+    try {
+      this.eco.attach(world);
+    } catch (err) {
+      // One world that can't be opened (saved by an older version, say) must not stop the game:
+      // keep it, and start in a fresh world instead.
+      const broken = world.name;
+      console.error(`Could not open world "${broken}"`, err);
+      this.eco.detach();
+      world = createWorld({ name: 'My World' });
+      this.worldMode.load(world);
+      this.eco.attach(world);
+      void worlds.save(world).then(() => worlds.setActiveWorldId(world.id));
+      setTimeout(() => toast(`"${broken}" couldn't be opened (${(err as Error).message}), so here is a new world. The old one is still in the World menu (M).`, 'error', 9000), 0);
+    }
     this.applyWorldPose(world);
 
     this.bindInput();
@@ -1012,9 +1025,19 @@ export class Game {
     if (!w) return false;
     await this.flushSave();
     if (this.structureMode) this.leaveStructureMode();
-    await this.worlds.setActiveWorldId(id);
+    const previous = this.currentWorld();
     const dropped = this.worldMode.load(w);
-    this.eco.attach(w);
+    try {
+      this.eco.attach(w);
+    } catch (err) {
+      console.error(`Could not open world "${w.name}"`, err);
+      this.eco.detach();
+      this.worldMode.load(previous);
+      this.eco.attach(previous);
+      toast(`"${w.name}" couldn't be opened: ${(err as Error).message}`, 'error', 6000);
+      return false;
+    }
+    await this.worlds.setActiveWorldId(id);
     this.ecoSaveTimer = 0;
     if (dropped.length) toast(`${dropped.length} placement${dropped.length === 1 ? '' : 's'} referenced structures that are not in your library and were dropped.`, 'error', 6000);
     this.applyWorldPose(w);
