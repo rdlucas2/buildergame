@@ -9,8 +9,11 @@ export const OPENING_SECONDS = 30;
 export const WAVE_INTERVAL = 55;
 /** From here on every wave is much tougher than the last. */
 export const OVERTIME_START = 20 * 60;
-/** Overtime multiplies enemy hit points and wave size by this much per wave. */
-export const OVERTIME_GROWTH = 1.22;
+/**
+ * Each overtime wave multiplies enemy hit points and wave size by these. Hit points matter most:
+ * splash and piercing weapons do better against bigger crowds, but not against tougher predators.
+ */
+export const OVERTIME_GROWTH = { hp: 1.35, size: 1.1 };
 /** How far from the warren predators appear. */
 export const SPAWN_DISTANCE = 70;
 /** Seconds over which a wave's groups arrive. */
@@ -47,21 +50,33 @@ export function kindWeights(t: number, schedule = SCHEDULE): Partial<Record<Crea
   return out;
 }
 
-/** Overtime factor: 1 until 20:00, then compounding per wave. */
-export function overtime(t: number): number {
-  if (t < OVERTIME_START) return 1;
-  return OVERTIME_GROWTH ** (Math.floor((t - OVERTIME_START) / WAVE_INTERVAL) + 1);
+/** Overtime waves so far at round time `t`: 0 until 20:00, then one more every wave interval. */
+export function overtimeWaves(t: number): number {
+  return t < OVERTIME_START ? 0 : Math.floor((t - OVERTIME_START) / WAVE_INTERVAL) + 1;
 }
+
+/** Overtime factor for wave size or hit points: 1 until 20:00, then compounding per wave. */
+export function overtime(t: number, what: 'hp' | 'size' = 'hp'): number {
+  return OVERTIME_GROWTH[what] ** overtimeWaves(t);
+}
+
+/**
+ * How waves grow. Their size grows gently (more predators would mostly cost speed), while each
+ * predator's hit points compound every minute: the defenders' weapons and perks grow about as
+ * fast for the first ten minutes or so, then fall behind, and only an upgraded warren lasts to 20.
+ */
+export const WAVE_SIZE = { base: 4, perMinute: 2.5, power: 1.25 };
+export const HP_GROWTH = 1.31;
 
 /** Threat points a wave at round time `t` may spend on predators (a fox costs 1). */
 export function threatBudget(t: number): number {
   const m = t / 60;
-  return (4 + 3 * m ** 1.5) * overtime(t);
+  return (WAVE_SIZE.base + WAVE_SIZE.perMinute * m ** WAVE_SIZE.power) * overtime(t, 'size');
 }
 
 /** Hit-point multiplier for predators arriving at round time `t`. */
 export function hpScale(t: number): number {
-  return (1 + 0.05 * (t / 60)) * overtime(t);
+  return HP_GROWTH ** (t / 60) * overtime(t, 'hp');
 }
 
 /** Round time at which wave `n` (from 1) is due. */

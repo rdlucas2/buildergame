@@ -41,16 +41,30 @@ to every material, and share what you make as files that anyone can drop into th
   - Foxes are fast and weak, and the only predators that fit through 1-high gaps. Wolves and badgers
     find the weakest stretch of wall (counting damage already done) and chew through it; badgers
     dig fastest. The waves for a seed are always the same.
-  - Rabbits are **defenders** (red scarves), which man the lookout posts and shoot slingshots at
-    predators they can see, or **breeders**, which keep eating, drinking and raising young, and run
+  - Rabbits are **defenders** (red scarves), which man the lookout posts and shoot at predators
+    they can see, or **breeders**, which keep eating, drinking and raising young, and run
     back inside the warren when predators come. The − and + buttons set how many defend. Extra
-    defenders need extra Lookout Posts to shoot from.
+    defenders need extra Lookout Posts to shoot from. A warren holds up to 40 rabbits.
   - **Fortify** (F) builds and breaks warren blocks inside the orange area, against a block budget.
     Stronger materials hold out longer and cost more: soft blocks, wood, stone, masonry and metal.
-    A **Lookout Post** block makes a defender post on top of it. Library structures can be stamped
-    into the warren too.
-  - Kills and waves earn points, which buy more block budget. The round ends when the last rabbit
-    falls, and the summary shows how long the warren held out.
+    Masonry unlocks at 3:00 (or 600 points) and metal at 8:00 (or 3000 points). A **Lookout Post**
+    block makes a defender post on top of it. Library structures can be stamped into the warren
+    too.
+  - **Weapons** unlock as the round goes on: slingshot, bow, crossbow, musket, rifle, shotgun,
+    cannon, laser and plasma rifle. Each unlocks with time survived, or sooner with points, kills
+    with the weapon before it, or kills of a particular predator. Defenders take up a stronger
+    weapon as soon as it unlocks.
+  - **Perks**: every wave from the second offers three random cards to choose one from (press
+    **K**), and every 5 minutes survived brings a rare one. They boost a weapon family's damage,
+    rate of fire, range, piercing, blast or shots at a time, or help the warren: mending blocks,
+    thicker fur, more young, more budget or more points. The longer the warren holds, the rarer and
+    stronger the cards.
+  - The **Armory** (**U**) shows every weapon and what unlocks it, sets the main weapon and how many
+    defenders carry others, and buys strength for each block tier (+25% hit points a level).
+    **Repair** mends damaged blocks for points.
+  - Kills and waves earn points. The round ends when the last rabbit falls, and the summary shows
+    how long the warren held out. Predators get tougher every minute, and from 20:00 every wave is
+    far tougher than the last.
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.
   Export a whole world as a `.world.zip` bundle that carries every structure it references.
 
@@ -75,6 +89,7 @@ The game is a static site with no server, hosted on GitHub Pages at
 | Tab | Structure library: place, edit, duplicate, rename, export, import, delete |
 | B | Build a new structure (enter structure mode) |
 | F | Fortify the warren (Warren Defense worlds) |
+| U · K | Armory · choose a perk (Warren Defense worlds) |
 | M | World menu: switch, create, rename, export, import worlds; author name; spawn point |
 | H | Controls overlay |
 | P | Save a screenshot |
@@ -112,7 +127,7 @@ npm run typecheck
 npm test           # unit tests (vitest)
 npm run e2e        # browser tests (playwright, headless chromium)
 npm run build      # production build in dist/
-npm run balance    # headless Warren Defense rounds over many seeds, per scripted policy
+npm run balance    # headless Warren Defense rounds over many seeds, per policy and upgrade profile
 ```
 
 The game exposes `window.__game` for automation (the end-to-end tests drive it through this API).

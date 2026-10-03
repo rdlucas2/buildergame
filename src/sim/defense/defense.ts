@@ -1,4 +1,4 @@
-import { NO_MODIFIERS, type DefenseModifiers, type DefenseOutcome, type DefenseState, type DefenseStats, type SpawnOrder } from '../../core/defense-state';
+import { NO_MODIFIERS, type DefenseModifiers, type DefenseOutcome, type DefenseState, type DefenseStats, type PerkCard, type SpawnOrder } from '../../core/defense-state';
 import { getMaterial } from '../../core/materials';
 import type { CreatureKind } from '../../core/world';
 import { TICK_SECONDS } from '../clock';
@@ -12,10 +12,13 @@ import { Combat, EYE } from './combat';
 import { BreachField, SolidSnapshot } from './field';
 import type { DefenseContext } from './context';
 import { makeDefender } from './defender';
-import { blockCost } from './materials';
+import { met, type Progress } from './criteria';
+import { TIERS, blockCost, tierOf } from './materials';
+import { rollOffer, totalsOf, type PerkTotals } from './perks';
 import { makeRaider } from './raider';
 import { OPENING_SECONDS, SPAWN_DISTANCE, WAVE_INTERVAL, planWave } from './waves';
-import { DEFAULT_WEAPON, WEAPONS, type WeaponDef } from './weapons';
+import { MAX_STRENGTH, REPAIR_HP_PER_POINT, TIER_UNLOCKS, WEAPON_UNLOCKS, strengthPrice } from './unlocks';
+import { DEFAULT_WEAPON, WEAPONS, WEAPON_LIST, weaponRank, type WeaponClass, type WeaponDef } from './weapons';
 
 export type DefenseAction =
   | { type: 'allocate'; defenders: number }
@@ -24,7 +27,17 @@ export type DefenseAction =
   | { type: 'place'; x: number; y: number; z: number; material: string }
   /** Several blocks at once (a library structure stamped into the warren): all of them or none. */
   | { type: 'placeMany'; blocks: Array<{ x: number; y: number; z: number; material: string }> }
-  | { type: 'remove'; x: number; y: number; z: number };
+  | { type: 'remove'; x: number; y: number; z: number }
+  /** Takes card `index` (0–2) of the oldest perk offer. */
+  | { type: 'pickPerk'; index: number }
+  /** The weapon defenders carry unless the loadout gives them another. */
+  | { type: 'equip'; weapon: string }
+  /** How many defenders carry `weapon` instead of the main weapon. */
+  | { type: 'loadout'; weapon: string; count: number }
+  /** Buys a strength level for a material tier. */
+  | { type: 'strengthen'; tier: number }
+  /** Repairs damaged blocks, the most worn first, as far as the points go. */
+  | { type: 'repair' };
 
 export interface ActionResult {
   ok: boolean;
@@ -33,7 +46,11 @@ export interface ActionResult {
 
 export type DefenseEvent =
   | { kind: 'wave'; n: number; counts: Partial<Record<CreatureKind, number>> }
-  | { kind: 'lost'; clock: number };
+  | { kind: 'lost'; clock: number }
+  | { kind: 'unlock'; weapon: string }
+  | { kind: 'tier'; tier: number }
+  | { kind: 'offer'; pending: number }
+  | { kind: 'milestone'; minutes: number };
 
 /** Block budget a round starts with. */
 export const START_BUDGET = 700;
@@ -41,6 +58,8 @@ export const START_BUDGET = 700;
 export const BUDGET_STEP = 100;
 const BUDGET_PRICE = 150;
 const BUDGET_PRICE_GROWTH = 1.18;
+/** How many rabbits a warren holds (breeding slows towards it): the colony can't grow without end. */
+export const WARREN_CAPACITY = 40;
 /** Defenders a round starts with. */
 export const START_DEFENDERS = 4;
 /** Path searches per tick in a defense round (predators plan their way in through walls). */
@@ -52,9 +71,17 @@ const FIELD_REFRESH = 2;
 /** After blocks are built or broken, fields are rebuilt once they are at least this old. */
 const FIELD_MIN_AGE = 0.5;
 const SEARCH_BUDGET = { normal: 10, urgent: 6 };
+const PERK_SALT = 0x9e4c;
+/** A milestone comes every this many seconds survived (with a perk offer of rare cards or better). */
+export const MILESTONE_SECONDS = 300;
 
 export function emptyStats(): DefenseStats {
   return { kills: 0, killsWith: {}, killsOf: {}, rabbitsLost: 0, blocksBroken: 0, shots: 0 };
+}
+
+/** The in-round progression of a fresh round: the slingshot, soft to stone blocks, no perks. */
+export function emptyProgression(): Pick<DefenseState, 'unlocked' | 'mainWeapon' | 'loadout' | 'tiers' | 'strength' | 'perks' | 'offers' | 'offersMade' | 'milestones'> {
+  return { unlocked: [DEFAULT_WEAPON], mainWeapon: DEFAULT_WEAPON, loadout: {}, tiers: 3, strength: [0, 0, 0, 0, 0], perks: [], offers: [], offersMade: 0, milestones: 0 };
 }
 
 /**
@@ -78,6 +105,21 @@ export class Defense implements DefenseContext {
   stats: DefenseStats;
   outcome: DefenseOutcome;
   readonly modifiers: DefenseModifiers;
+  unlocked: string[];
+  mainWeapon: string;
+  loadout: Record<string, number>;
+  tiers: number;
+  readonly strength: number[];
+  perks: PerkCard[];
+  offers: PerkCard[][];
+  offersMade: number;
+  milestones: number;
+  /** What the perks taken add up to. */
+  private totals: PerkTotals;
+  /** Weapons with perks and upgrades applied, by id (rebuilt when either changes). */
+  private readonly effective = new Map<string, WeaponDef>();
+  /** The weapon each defender carries. */
+  private readonly weaponOf = new Map<number, string>();
   /** Things worth telling the player, collected until the view drains them. */
   events: DefenseEvent[] = [];
   private readonly postOf = new Map<number, string>();
@@ -110,11 +152,24 @@ export class Defense implements DefenseContext {
     this.stats = structuredClone(state.stats);
     this.outcome = state.outcome;
     this.modifiers = { ...NO_MODIFIERS, ...state.modifiers };
+    // Weapons this version doesn't know (from a newer file) are dropped.
+    this.unlocked = state.unlocked.filter((id) => WEAPONS[id]);
+    if (!this.unlocked.includes(DEFAULT_WEAPON)) this.unlocked.unshift(DEFAULT_WEAPON);
+    this.mainWeapon = WEAPONS[state.mainWeapon] ? state.mainWeapon : DEFAULT_WEAPON;
+    this.loadout = Object.fromEntries(Object.entries(state.loadout).filter(([id]) => WEAPONS[id]));
+    this.tiers = state.tiers;
+    this.strength = TIERS.map((_, i) => state.strength[i] ?? 0);
+    this.perks = state.perks.map((p) => ({ ...p }));
+    this.offers = state.offers.map((o) => o.map((p) => ({ ...p })));
+    this.offersMade = state.offersMade;
+    this.milestones = state.milestones;
+    this.totals = totalsOf(this.perks);
     this.base.hpMultiplier = this.modifiers.blockHp;
+    this.base.strength = this.strength;
     this.combat = new Combat(eco.population, eco.solids);
     this.breeder = {
       needs: true,
-      decide: (pop, c, env) => decidePrey(pop, c, env.night, { breedBoost: this.modifiers.fertility, home: this.home }),
+      decide: (pop, c, env) => decidePrey(pop, c, env.night, { breedBoost: this.modifiers.fertility * this.totals.fertility, home: this.home }),
       interval: PREY.interval,
     };
     this.defender = makeDefender(this);
@@ -139,12 +194,14 @@ export class Defense implements DefenseContext {
       stats: emptyStats(),
       outcome: 'playing',
       modifiers: { ...modifiers },
+      ...emptyProgression(),
     };
   }
 
   private install(): void {
     const { population: pop, solids, vegetation: veg } = this.eco;
     pop.searchBudget = { ...SEARCH_BUDGET };
+    pop.caps = { prey: WARREN_CAPACITY + this.modifiers.rabbits };
     pop.behaviourFor = (c) => (c.species === 'predator' ? this.raider : c.role === 'defender' ? this.defender : this.breeder);
     pop.onDeath = (c, info) => this.onDeath(c, info);
     solids.setBase(this.base);
@@ -185,7 +242,10 @@ export class Defense implements DefenseContext {
     this.roleTimer -= dt;
     if (this.roleTimer <= 0) {
       this.roleTimer = 1;
+      this.checkUnlocks();
+      this.checkMilestones();
       this.assignRoles();
+      this.mend(1);
     }
     if (this.safetyDirty && this.clock - this.lastSafety >= 1) {
       this.safetyDirty = false;
@@ -209,6 +269,110 @@ export class Defense implements DefenseContext {
     const counts: Partial<Record<CreatureKind, number>> = {};
     for (const o of plan.orders) counts[o.kind] = (counts[o.kind] ?? 0) + o.count;
     this.events.push({ kind: 'wave', n: this.wave, counts });
+    // A perk to choose from every wave after the first.
+    if (this.wave >= 2) this.offerPerks(0);
+  }
+
+  // ---- progression ---------------------------------------------------------------------------
+
+  /** This round's progress, as unlock criteria measure it. */
+  get progress(): Progress {
+    const s = this.stats;
+    return { clock: this.clock, score: this.score, waves: this.wave, kills: s.kills, killsWith: s.killsWith, killsOf: s.killsOf };
+  }
+
+  private checkUnlocks(): void {
+    const p = this.progress;
+    for (const w of WEAPON_LIST) {
+      if (this.unlocked.includes(w.id)) continue;
+      const c = WEAPON_UNLOCKS[w.id];
+      if (c && !met(c, p)) continue;
+      this.unlocked.push(w.id);
+      // Defenders take up the new weapon when it beats the one they carry.
+      if (weaponRank(w.id) > weaponRank(this.mainWeapon)) this.mainWeapon = w.id;
+      this.events.push({ kind: 'unlock', weapon: w.id });
+      this.armDefenders();
+    }
+    while (this.tiers < TIERS.length) {
+      const c = TIER_UNLOCKS[this.tiers];
+      if (c && !met(c, p)) break;
+      this.events.push({ kind: 'tier', tier: this.tiers });
+      this.tiers++;
+    }
+  }
+
+  private checkMilestones(): void {
+    while (this.clock >= (this.milestones + 1) * MILESTONE_SECONDS) {
+      this.milestones++;
+      this.events.push({ kind: 'milestone', minutes: (this.milestones * MILESTONE_SECONDS) / 60 });
+      this.offerPerks(2);
+    }
+  }
+
+  /** Deals three perk cards to choose from (seeded per offer, like waves). */
+  private offerPerks(minRarity: number): void {
+    const rng = new Rng(hash3(this.eco.seed, PERK_SALT, this.offersMade));
+    this.offersMade++;
+    const classes = [...new Set(this.unlocked.map((id) => WEAPONS[id].class))];
+    this.offers.push(rollOffer(rng, this.clock, classes, WEAPONS[this.mainWeapon].class, minRarity));
+    this.events.push({ kind: 'offer', pending: this.offers.length });
+  }
+
+  /** Mends worn blocks by the perk rate over `seconds`. */
+  private mend(seconds: number): void {
+    const rate = this.totals.regen;
+    if (rate <= 0) return;
+    for (const b of this.base.damaged()) this.base.repair(b.x, b.y, b.z, this.base.maxHpAt(b.x, b.y, b.z) * rate * seconds);
+  }
+
+  /** What the perks taken add up to. */
+  get perkTotals(): PerkTotals {
+    return this.totals;
+  }
+
+  /** A weapon as defenders actually fire it, with perks and upgrades applied. */
+  effectiveWeapon(id: string): WeaponDef {
+    let w = this.effective.get(id);
+    if (w) return w;
+    const base = WEAPONS[id] ?? WEAPONS[DEFAULT_WEAPON];
+    const k: WeaponClass = base.class;
+    const t = this.totals;
+    const pellets = (base.pellets ?? 1) + t.multishot[k];
+    w = {
+      ...base,
+      damage: base.damage * this.modifiers.damage * t.damage[k],
+      cooldown: base.cooldown / t.rate[k],
+      range: base.range + t.range[k],
+      pellets,
+      spread: base.spread ?? (pellets > 1 ? 0.08 * (pellets - 1) : 0),
+      pierce: (base.pierce ?? 0) + t.pierce[k],
+      splash: (base.splash ?? 0) + t.splash[k],
+    };
+    this.effective.set(id, w);
+    return w;
+  }
+
+  /** Gives each defender its weapon: specialists per the loadout (strongest first), the rest the main weapon. */
+  private armDefenders(): void {
+    this.weaponOf.clear();
+    const defenders = this.eco.population.creatures.filter((c) => c.role === 'defender' && c.deadFor < 0).sort((a, b) => a.id - b.id);
+    let i = 0;
+    for (const w of [...WEAPON_LIST].reverse()) {
+      const n = this.unlocked.includes(w.id) && w.id !== this.mainWeapon ? (this.loadout[w.id] ?? 0) : 0;
+      for (let k = 0; k < n && i < defenders.length; k++) this.weaponOf.set(defenders[i++].id, w.id);
+    }
+    for (; i < defenders.length; i++) this.weaponOf.set(defenders[i].id, this.mainWeapon);
+  }
+
+  /** Points to repair every damaged block. */
+  get repairPrice(): number {
+    return Math.ceil(this.base.totalDamage() / REPAIR_HP_PER_POINT);
+  }
+
+  /** Points for the next strength level of a tier (Infinity when it is maxed out). */
+  strengthPrice(tier: number): number {
+    const level = this.strength[tier] ?? 0;
+    return level >= MAX_STRENGTH ? Infinity : strengthPrice(tier, level);
   }
 
   /** Brings a group of predators in from the edge of the land, `SPAWN_DISTANCE` from the warren. */
@@ -235,9 +399,11 @@ export class Defense implements DefenseContext {
     const rabbits = this.eco.population.creatures.filter((c) => c.species === 'prey' && c.deadFor < 0);
     const maturity = KINDS.rabbit.maturity;
     const eligible = (c: Creature) => c.age >= maturity && c.health > 0.35;
+    let changed = false;
     const setRole = (c: Creature, role: 'breeder' | 'defender') => {
       if (c.role === role) return;
       c.role = role;
+      changed = true;
       c.activity = 'idle';
       c.path = [];
       c.think = 0;
@@ -258,6 +424,7 @@ export class Defense implements DefenseContext {
         missing--;
       }
     }
+    if (changed || this.weaponOf.size === 0) this.armDefenders();
   }
 
   private onDeath(c: Creature, info: DeathInfo): void {
@@ -267,7 +434,7 @@ export class Defense implements DefenseContext {
       this.stats.kills++;
       if (info.weapon) this.stats.killsWith[info.weapon] = (this.stats.killsWith[info.weapon] ?? 0) + 1;
       this.stats.killsOf[kind] = (this.stats.killsOf[kind] ?? 0) + 1;
-      const earned = Math.round(KINDS[kind].points * (1 + this.clock / 600));
+      const earned = Math.round(KINDS[kind].points * (1 + this.clock / 600) * this.totals.bounty);
       this.points += earned;
       this.score += earned;
       return;
@@ -326,7 +493,63 @@ export class Defense implements DefenseContext {
         this.base.set(x, y, z, null);
         return { ok: true };
       }
+      case 'pickPerk': {
+        const offer = this.offers[0];
+        const card = offer?.[action.index];
+        if (!card) return { ok: false, reason: offer ? 'No such card.' : 'No perk to pick.' };
+        this.offers.shift();
+        this.perks.push({ ...card });
+        if (card.kind === 'budget') this.budget += card.amount;
+        this.totals = totalsOf(this.perks);
+        this.effective.clear();
+        return { ok: true };
+      }
+      case 'equip': {
+        if (!this.unlocked.includes(action.weapon)) return { ok: false, reason: 'That weapon is not unlocked yet.' };
+        this.mainWeapon = action.weapon;
+        this.armDefenders();
+        return { ok: true };
+      }
+      case 'loadout': {
+        if (!this.unlocked.includes(action.weapon)) return { ok: false, reason: 'That weapon is not unlocked yet.' };
+        const n = Math.max(0, Math.min(1000, Math.round(action.count)));
+        if (n === 0) delete this.loadout[action.weapon];
+        else this.loadout[action.weapon] = n;
+        this.armDefenders();
+        return { ok: true };
+      }
+      case 'strengthen': {
+        const t = action.tier;
+        if (!(t >= 0 && t < TIERS.length)) return { ok: false, reason: 'No such tier.' };
+        if (t >= this.tiers) return { ok: false, reason: `${TIERS[t].name} blocks are not unlocked yet.` };
+        const price = this.strengthPrice(t);
+        if (!Number.isFinite(price)) return { ok: false, reason: 'Already as strong as it gets.' };
+        if (this.points < price) return { ok: false, reason: `Needs ${price} points.` };
+        this.points -= price;
+        this.strength[t]++;
+        this.base.version++;
+        return { ok: true };
+      }
+      case 'repair': {
+        const damaged = this.base.damaged().sort((a, b) => b.wear - a.wear);
+        if (damaged.length === 0) return { ok: false, reason: 'Nothing needs repairing.' };
+        if (this.points < 1) return { ok: false, reason: 'No points to spend.' };
+        let spent = 0;
+        for (const b of damaged) {
+          const hp = Math.min(this.base.maxHpAt(b.x, b.y, b.z) * b.wear, (this.points - spent) * REPAIR_HP_PER_POINT);
+          if (hp <= 0) break;
+          spent += this.base.repair(b.x, b.y, b.z, hp) / REPAIR_HP_PER_POINT;
+        }
+        this.points -= Math.ceil(spent);
+        return { ok: true };
+      }
     }
+  }
+
+  /** Why a material can't be built with yet, or null when it can. */
+  private locked(material: string): string | null {
+    const t = tierOf(material);
+    return t < this.tiers ? null : `${TIERS[t].name} blocks are not unlocked yet.`;
   }
 
   private placeMany(blocks: ReadonlyArray<{ x: number; y: number; z: number; material: string }>): ActionResult {
@@ -334,6 +557,8 @@ export class Defense implements DefenseContext {
     let cost = 0;
     for (const b of blocks) {
       if (!getMaterial(b.material)) return { ok: false, reason: 'Unknown material.' };
+      const locked = this.locked(b.material);
+      if (locked) return { ok: false, reason: locked };
       if (!this.base.contains(b.x, b.y, b.z)) return { ok: false, reason: 'It does not fit inside the warren area.' };
       if (this.base.solidAt(b.x, b.y, b.z)) return { ok: false, reason: 'It overlaps blocks already there.' };
       cost += blockCost(b.material);
@@ -345,6 +570,8 @@ export class Defense implements DefenseContext {
 
   private place(x: number, y: number, z: number, material: string): ActionResult {
     if (!getMaterial(material)) return { ok: false, reason: 'Unknown material.' };
+    const locked = this.locked(material);
+    if (locked) return { ok: false, reason: locked };
     if (!this.base.contains(x, y, z)) return { ok: false, reason: 'Outside the warren area.' };
     if (this.base.solidAt(x, y, z)) return { ok: false, reason: 'There is already a block there.' };
     const cost = blockCost(material);
@@ -397,20 +624,12 @@ export class Defense implements DefenseContext {
     set.add(key);
   }
 
-  weaponFor(): WeaponDef {
-    return WEAPONS[DEFAULT_WEAPON];
+  weaponFor(c: Creature): WeaponDef {
+    return this.effectiveWeapon(this.weaponOf.get(c.id) ?? this.mainWeapon);
   }
 
-  damageMult(): number {
-    return this.modifiers.damage;
-  }
-
-  cooldownMult(): number {
-    return 1;
-  }
-
-  rangeBonus(): number {
-    return 0;
+  critChance(_c: Creature, w: WeaponDef): number {
+    return this.totals.crit[w.class];
   }
 
   findTarget(c: Creature, _w: WeaponDef, range: number): Creature | null {
@@ -476,7 +695,7 @@ export class Defense implements DefenseContext {
   }
 
   biteMult(): number {
-    return this.modifiers.armour;
+    return this.modifiers.armour * this.totals.armour;
   }
 
   // ---- saving --------------------------------------------------------------------------------
@@ -497,6 +716,15 @@ export class Defense implements DefenseContext {
       stats: structuredClone(this.stats),
       outcome: this.outcome,
       modifiers: { ...this.modifiers },
+      unlocked: [...this.unlocked],
+      mainWeapon: this.mainWeapon,
+      loadout: { ...this.loadout },
+      tiers: this.tiers,
+      strength: [...this.strength],
+      perks: this.perks.map((p) => ({ ...p })),
+      offers: this.offers.map((o) => o.map((p) => ({ ...p }))),
+      offersMade: this.offersMade,
+      milestones: this.milestones,
     };
   }
 }

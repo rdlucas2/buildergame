@@ -7,6 +7,9 @@ export interface DefenseHudHandlers {
   onBuyBudget: () => void;
   onAllocate: (delta: number) => void;
   onFortify: () => void;
+  onPerk: () => void;
+  onRepair: () => void;
+  onArmory: () => void;
 }
 
 export interface DefenseHudState {
@@ -23,6 +26,10 @@ export interface DefenseHudState {
   predators: number;
   fortifying: boolean;
   over: boolean;
+  /** Perk offers waiting to be chosen. */
+  offers: number;
+  /** Points to repair every damaged block (0 when nothing is damaged). */
+  repairPrice: number;
 }
 
 const PLURALS: Record<string, string> = { fox: 'foxes', wolf: 'wolves' };
@@ -53,12 +60,17 @@ export class DefenseHud {
   private readonly buyBtn: HTMLButtonElement;
   private readonly rolesEl = el('span', { class: 'def-roles', id: 'def-roles' });
   private readonly fortifyBtn: HTMLButtonElement;
+  private readonly perkBtn: HTMLButtonElement;
+  private readonly repairBtn: HTMLButtonElement;
   private last = '';
 
   constructor(container: HTMLElement, handlers: DefenseHudHandlers) {
     this.callBtn = el('button', { class: 'def-btn', id: 'def-call', title: 'Call the next wave now for bonus points', onclick: handlers.onCallWave }, 'Call now');
     this.buyBtn = el('button', { class: 'def-btn', id: 'def-buy', onclick: handlers.onBuyBudget }, '+');
     this.fortifyBtn = el('button', { class: 'def-btn def-fortify', id: 'def-fortify', title: 'Build and repair the warren (F)', onclick: handlers.onFortify }, 'Fortify');
+    this.perkBtn = el('button', { class: 'def-btn def-perk', id: 'def-perk', title: 'Choose a perk (K)', onclick: handlers.onPerk }, 'Perk');
+    this.repairBtn = el('button', { class: 'def-btn', id: 'def-repair', title: 'Repair damaged blocks, the most worn first', onclick: handlers.onRepair }, 'Repair');
+    const armory = el('button', { class: 'def-btn', id: 'def-armory', title: 'Weapons, block strength and perks (U)', onclick: handlers.onArmory }, 'Armory (U)');
     const minus = el('button', { class: 'def-btn def-step', id: 'def-fewer', title: 'Fewer defenders', onclick: () => handlers.onAllocate(-1) }, '−');
     const plus = el('button', { class: 'def-btn def-step', id: 'def-more', title: 'More defenders', onclick: () => handlers.onAllocate(1) }, '+');
     this.root = el(
@@ -69,6 +81,9 @@ export class DefenseHud {
       this.pointsEl,
       el('span', { class: 'def-group' }, this.budgetEl, this.buyBtn),
       el('span', { class: 'def-group' }, minus, this.rolesEl, plus),
+      this.perkBtn,
+      this.repairBtn,
+      armory,
       this.fortifyBtn,
     );
     this.root.style.display = 'none';
@@ -80,7 +95,7 @@ export class DefenseHud {
   }
 
   update(s: DefenseHudState): void {
-    const key = JSON.stringify([Math.floor(s.clock), s.wave, Math.ceil(s.nextWaveIn), s.points, s.cost, s.budget, s.budgetPrice, s.defenders, s.breeders, s.allocation, s.fortifying, s.over, s.predators]);
+    const key = JSON.stringify([Math.floor(s.clock), s.wave, Math.ceil(s.nextWaveIn), s.points, s.cost, s.budget, s.budgetPrice, s.defenders, s.breeders, s.allocation, s.fortifying, s.over, s.predators, s.offers, s.repairPrice]);
     if (key === this.last) return;
     this.last = key;
     this.clockEl.textContent = `⏱ ${formatRoundTime(s.clock)}`;
@@ -94,6 +109,11 @@ export class DefenseHud {
     this.rolesEl.title = `${s.defenders} defenders (wanted: ${s.allocation}) and ${s.breeders} breeders`;
     this.fortifyBtn.classList.toggle('active', s.fortifying);
     this.fortifyBtn.textContent = s.fortifying ? 'Done (F)' : 'Fortify (F)';
+    this.perkBtn.style.display = s.offers > 0 && !s.over ? '' : 'none';
+    this.perkBtn.textContent = s.offers > 1 ? `🎁 ${s.offers} perks (K)` : '🎁 Perk (K)';
+    this.repairBtn.style.display = s.repairPrice > 0 && !s.over ? '' : 'none';
+    this.repairBtn.textContent = `🔧 ${s.repairPrice}★`;
+    this.repairBtn.disabled = s.points < 1;
   }
 
   dispose(): void {

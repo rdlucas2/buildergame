@@ -121,15 +121,22 @@ export class DefenseBase {
     return 'damaged';
   }
 
-  /** Repairs a block's damage. Returns the hit points restored. */
-  repair(x: number, y: number, z: number): number {
+  /** Repairs up to `amount` hit points of a block's damage (all of it by default). Returns the hit points restored. */
+  repair(x: number, y: number, z: number, amount = Infinity): number {
     if (!this.solidAt(x, y, z)) return 0;
     const i = this.index(x, y, z);
-    const restored = this.damageMap[i] / 10;
-    if (restored === 0) return 0;
-    this.damageMap[i] = 0;
+    const tenths = Math.min(this.damageMap[i], Math.floor(amount * 10));
+    if (tenths <= 0) return 0;
+    this.damageMap[i] -= tenths;
     this.version++;
-    return restored;
+    return tenths / 10;
+  }
+
+  /** Hit points of damage across every block. */
+  totalDamage(): number {
+    let sum = 0;
+    for (let i = 0; i < this.damageMap.length; i++) sum += this.damageMap[i];
+    return sum / 10;
   }
 
   /** Total budget cost of every block standing. */

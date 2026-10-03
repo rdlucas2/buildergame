@@ -16,11 +16,10 @@ export interface DefenseContext {
   postFor(c: Creature): Cell | null;
   /** A defender could not reach its post: give it another one next time. */
   postUnreachable(c: Creature): void;
+  /** The weapon a defender carries, with perks and upgrades applied. */
   weaponFor(c: Creature): WeaponDef;
-  /** Multipliers from upgrades and perks. */
-  damageMult(c: Creature, w: WeaponDef): number;
-  cooldownMult(c: Creature, w: WeaponDef): number;
-  rangeBonus(c: Creature, w: WeaponDef): number;
+  /** Chance that a shot does double damage. */
+  critChance(c: Creature, w: WeaponDef): number;
   /** The best predator for a defender to shoot at, or null. */
   findTarget(c: Creature, w: WeaponDef, range: number): Creature | null;
   /** How costly it is for a predator to break the block at (x, y, z), or null when it can't. */

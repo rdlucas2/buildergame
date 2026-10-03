@@ -176,7 +176,16 @@ still written as version 2. Creatures gain three optional fields:
   "stats": { "kills": 31, "killsWith": { "slingshot": 31 }, "killsOf": { "fox": 27, "wolf": 4 },
              "rabbitsLost": 3, "blocksBroken": 9, "shots": 402 },
   "outcome": "playing",
-  "modifiers": { "budget": 0, "rabbits": 0, "blockHp": 1, "damage": 1, "armour": 1, "fertility": 1 }
+  "modifiers": { "budget": 0, "rabbits": 0, "blockHp": 1, "damage": 1, "armour": 1, "fertility": 1 },
+  "unlocked": ["slingshot", "bow", "crossbow"],
+  "mainWeapon": "crossbow",
+  "loadout": { "bow": 2 },
+  "tiers": 4,
+  "strength": [0, 1, 2, 0, 0],
+  "perks": [{ "kind": "damage", "target": "bow", "amount": 0.07, "rarity": "uncommon" }],
+  "offers": [[{ "kind": "rate", "target": "all", "amount": 0.03, "rarity": "common" }, …]],
+  "offersMade": 6,
+  "milestones": 1
 }
 ```
 
@@ -194,6 +203,14 @@ still written as version 2. Creatures gain three optional fields:
 | `stats` | Round totals: kills (overall, by weapon and by predator kind), rabbits lost, blocks broken and shots fired. |
 | `outcome` | `playing`, or `lost` once no rabbits are left. |
 | `modifiers` | Bonuses the round started with, stored so a reload plays on with the same numbers: extra `budget` and `rabbits`, and multipliers on block hit points, defender damage, bite damage taken (`armour`) and breeding (`fertility`). |
+| `unlocked`, `mainWeapon`, `loadout` | Weapons unlocked this round, the one defenders carry by default, and how many defenders carry each other weapon. Weapon ids are `slingshot`, `bow`, `crossbow`, `musket`, `rifle`, `shotgun`, `cannon`, `laser` and `plasma`; readers drop ids they don't know. |
+| `tiers`, `strength` | Material tiers that can be built with (tiers 0 to `tiers - 1`, from soft to metal), and the strength level bought for each tier (each level adds a quarter of the tier's hit points). |
+| `perks` | Perks taken. `kind` is one of `damage`, `rate`, `range`, `crit`, `pierce`, `splash`, `multishot` (these boost the weapon family in `target`: `sling`, `bow`, `firearm`, `heavy`, `energy`, or `all`), `regen`, `armour`, `fertility`, `budget` or `bounty`. `amount` is a fraction (0.07 is 7%), except for `range` and `splash` (cells), `pierce` and `multishot` (a count) and `budget` (blocks). `rarity` runs `common`, `uncommon`, `rare`, `epic`, `legendary`. |
+| `offers`, `offersMade` | Perk choices waiting, three cards each, oldest first; and how many offers were dealt (the next offer's seed). |
+| `milestones` | Five-minute milestones reached. |
+
+All the fields from `unlocked` on are optional: a round saved before they existed loads with just
+the slingshot, soft to stone blocks and no perks.
 
 Readers must check that both decoded volumes hold `size.x * size.y * size.z` values and that no voxel
 value exceeds the palette length.
