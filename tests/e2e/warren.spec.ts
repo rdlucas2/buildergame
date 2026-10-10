@@ -136,7 +136,8 @@ test('the Shop expands the warren: a new ring of walls with posts and room for m
   await page.keyboard.press('KeyU');
   await expect(shop.locator('.shop-item .armory-name')).toHaveText(['More block budget', 'Expand the warren', 'Repair everything', 'Reinforce the warren']);
   await expect(expand).toContainText(`(${d.room} now)`);
-  await expect(expand).toContainText(/rabbit gap in each side/);
+  await expect(expand).toContainText(/lookout posts on top: room for/);
+  await expect(expand).not.toContainText(/gap/);
   await expect(expand.locator('.shop-buy')).toBeDisabled();
   await page.keyboard.press('Escape');
 
