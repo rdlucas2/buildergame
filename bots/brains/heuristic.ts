@@ -52,7 +52,8 @@ export class HeuristicBrain implements Brain {
 
   /** Defenders for the colony's size: the persona's share of grown rabbits, at least its minimum. */
   allocation(obs: DefenseObservation): Extract<DefenseAction, { type: 'allocate' }> | null {
-    const want = this.defendersFor(obs, this.persona.defenders);
+    const draft = this.persona.draft;
+    const want = this.defendersFor(obs, draft && obs.clock >= draft.from ? draft.share : this.persona.defenders);
     return want !== obs.allocation ? { type: 'allocate', defenders: want } : null;
   }
 

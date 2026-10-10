@@ -91,3 +91,18 @@ test('a bot plays the game in the browser, with its overlay, and its replay chec
   await expect(page.locator('#bot-overlay')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('the World menu offers an example replay of every play style, and watching one plays it', async ({ page }) => {
+  const errors = await boot(page);
+  await page.keyboard.press('KeyM');
+  const rows = page.locator('#example-list [data-example]');
+  await expect(rows).toHaveCount(6);
+  await expect(page.locator('#example-list')).toContainText('Breeder');
+  await page.screenshot({ path: `${SHOTS}/41-example-replays.png` });
+  await page.locator('#example-list [data-example="breeder"] [data-action="watch-example"]').click();
+  await expect(page.locator('#bot-overlay')).toHaveText(/Replay: breeder \(heuristic\)/);
+  const state = await page.evaluate(() => window.__game!.replayState());
+  expect(state).toMatchObject({ done: false });
+  expect(state!.ticks).toBeGreaterThan(5000);
+  expect(errors).toEqual([]);
+});

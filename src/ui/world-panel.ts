@@ -1,3 +1,4 @@
+import type { ReplayExample } from '../storage/replay-examples';
 import type { WorldSummary } from '../storage/worlds';
 import { el, formatDate } from './dom';
 import { openPanel, type PanelHandle } from './panel';
@@ -13,6 +14,7 @@ export interface WorldActions {
   onSetSpawn: () => void;
   onCouncil: () => void;
   onWatchReplay: () => void;
+  onWatchExample: (example: ReplayExample) => void;
 }
 
 export interface WorldPanelState {
@@ -20,6 +22,8 @@ export interface WorldPanelState {
   activeId: string | undefined;
   author: string;
   persistent: boolean;
+  /** Recorded rounds of each bot play style, to watch. */
+  examples: ReplayExample[];
 }
 
 export function openWorldPanel(state: WorldPanelState, actions: WorldActions): PanelHandle {
@@ -58,5 +62,31 @@ export function openWorldPanel(state: WorldPanelState, actions: WorldActions): P
     );
   }
   panel.body.append(el('h3', {}, 'Your worlds'), list);
+  if (state.examples.length > 0) panel.body.append(examplesSection(state.examples, actions));
   return panel;
+}
+
+const mmss = (seconds: number): string => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+
+/** Warren Defense rounds played by the test bots, one per play style, to watch and compare. */
+function examplesSection(examples: ReplayExample[], actions: WorldActions): HTMLElement {
+  const list = el('div', { class: 'list', id: 'example-list' });
+  for (const e of examples) {
+    list.append(
+      el(
+        'div',
+        { class: 'list-row', dataset: { example: e.style } },
+        el(
+          'div',
+          { class: 'grow' },
+          el('div', { class: 'card-title' }, e.name, el('span', { class: 'tag defense' }, `held ${mmss(e.seconds)}`)),
+          el('div', { class: 'muted small' }, e.brief),
+          el('div', { class: 'muted small' }, `Wave ${e.wave} · ${e.kills} kills · score ${e.score} · seed ${e.seed}`),
+          e.moments.length ? el('div', { class: 'muted small' }, e.moments.map(([t, what]) => `${mmss(t)} ${what}`).join(' · ')) : null,
+        ),
+        el('button', { class: 'btn small primary', onclick: () => actions.onWatchExample(e), dataset: { action: 'watch-example' } }, '▶ Watch'),
+      ),
+    );
+  }
+  return el('div', {}, el('h3', {}, 'Example replays'), el('p', { class: 'muted small' }, 'The test bots playing Warren Defense on a fresh profile, one round per play style. Watch to compare strategies; use the speed buttons to fast-forward.'), list);
 }

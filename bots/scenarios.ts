@@ -135,6 +135,19 @@ export const SCENARIOS: readonly Scenario[] = [
     },
   },
   {
+    name: 'styles-compete',
+    about: 'On a fresh profile no style is a trap or a clear winner: the longest median is within 1.3× the shortest, and the breeder lasts at least 10:00.',
+    async check(f) {
+      const runs = await f.freshRounds();
+      const by = STYLES.map((s) => ({ s, t: median(runs.filter((r) => r.style === s).map((r) => r.run.final.clock)) }));
+      const best = Math.max(...by.map((x) => x.t));
+      const worst = Math.min(...by.map((x) => x.t));
+      const breeder = by.find((x) => x.s === 'breeder')!.t;
+      const ratio = best / worst;
+      return { pass: ratio <= 1.3 && breeder >= 600, detail: `spread ${ratio.toFixed(2)}× (${by.map((x) => `${x.s} ${clock(x.t)}`).join(', ')})` };
+    },
+  },
+  {
     name: 'upgrades-help',
     about: 'Every Warren Council upgrade: balanced lasts longer than on a fresh profile, and at least 12:00.',
     async check(f) {

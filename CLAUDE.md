@@ -43,3 +43,7 @@ They run in Node only. A unit test fails if anything under `src/` imports the SD
 To iterate on Warren Defense without a browser or tokens, run `npm run bots:test -- --quick`: it
 plays headless rounds and checks the rules and balance. Use `--brain mock` to run the TypeSafe
 brain against its offline mock.
+
+The game ships one example replay per bot style in `public/replays/`. A change to the rules or the
+bots' personas makes them stale, and `tests/unit/bots/examples.test.ts` fails: run
+`npm run bots:examples` and commit the result.

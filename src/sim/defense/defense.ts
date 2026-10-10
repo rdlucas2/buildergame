@@ -69,6 +69,8 @@ export const WAVE_BUDGET = 30;
 export const WAVE_BUDGET_GROWTH = 2;
 /** How much faster rabbits grow up and breed in a round than in a wild world. */
 export const BREED_PACE = 3;
+/** Points a grown breeder forages per second: a colony kept breeding pays for itself, and every rabbit put on a post costs that. */
+export const FORAGE_RATE = 0.15;
 /** Seconds between alerts that the core is under attack. */
 const CORE_ALERT_SECONDS = 20;
 /** How close (from its middle to the block's nearest face) a predator must be to gnaw the core. */
@@ -193,6 +195,8 @@ export class Defense implements DefenseContext {
   private readonly postOf = new Map<number, string>();
   private readonly unreachable = new Map<number, Set<string>>();
   private roleTimer = 0;
+  /** Foraged points not yet whole, carried to the next second. */
+  private forage = 0;
   private safetyDirty = false;
   private lastSafety = -Infinity;
   /** The solid snapshot the breach fields are built on, and the fields built on it, by kind. */
@@ -364,6 +368,7 @@ export class Defense implements DefenseContext {
       this.checkMilestones();
       this.assignRoles();
       this.mend(1);
+      this.gather();
     }
     if (this.safetyDirty && this.clock - this.lastSafety >= 1) {
       this.safetyDirty = false;
@@ -381,6 +386,19 @@ export class Defense implements DefenseContext {
       }
     }
     this.lastCoreDamage = this.base.coreDamage;
+  }
+
+  /** Grown breeders forage points each second: the colony's economy, set against the defenders it gives up. */
+  private gather(): void {
+    const pop = this.eco.population;
+    let breeders = 0;
+    for (const c of pop.creatures) if (c.species === 'prey' && c.deadFor < 0 && c.role !== 'defender' && c.age >= pop.maturityOf(c)) breeders++;
+    this.forage += breeders * FORAGE_RATE * this.totals.bounty;
+    const whole = Math.floor(this.forage);
+    if (whole <= 0) return;
+    this.forage -= whole;
+    this.points += whole;
+    this.score += whole;
   }
 
   /** Lookout posts with a defender standing guard on them. */
