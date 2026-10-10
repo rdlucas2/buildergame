@@ -3,44 +3,44 @@
   {
    "style": "turtle",
    "name": "Turtle",
-   "brief": "Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps only a small guard of defenders. Spends points on repairs and stronger blocks before anything else.",
+   "brief": "Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps a modest guard of defenders, drafting half the colony from 4:00 and taking damage perks. Spends points on repairs and stronger blocks before anything else.",
    "file": "turtle.replay.json",
-   "seed": 5,
-   "seconds": 703,
-   "wave": 13,
-   "score": 6238,
-   "kills": 131,
+   "seed": 1,
+   "seconds": 786,
+   "wave": 14,
+   "score": 6933,
+   "kills": 153,
    "moments": [
     [
-     60,
-     "repair"
+     0,
+     "6 defenders, more lookouts"
     ],
     [
-     191,
+     126,
      "reinforce the warren"
     ],
     [
-     246,
-     "5 defenders"
+     236,
+     "repair, reinforce doorways"
     ],
     [
-     301,
-     "8 defenders, raise the walls"
-    ],
-    [
-     361,
+     306,
      "thicken the walls"
     ],
     [
-     511,
+     426,
+     "14 defenders"
+    ],
+    [
+     521,
      "reinforce the warren"
     ],
     [
-     566,
-     "5 defenders"
+     666,
+     "8 defenders"
     ],
     [
-     636,
+     746,
      "repair"
     ]
    ]

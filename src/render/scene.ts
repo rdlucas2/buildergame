@@ -2,14 +2,18 @@ import { Color, DirectionalLight, Fog, HemisphereLight, PerspectiveCamera, Scene
 
 const DAY_SKY = new Color(0x87b7e6);
 const DUSK_SKY = new Color(0xe9a26f);
-const NIGHT_SKY = new Color(0x0d1628);
+// Nights are lit by a full moon: bright enough to see the whole warren, still a deep blue sky.
+const NIGHT_SKY = new Color(0x172748);
 const DAY_HEMI = new Color(0xcfe8ff);
-const NIGHT_HEMI = new Color(0x4a5a86);
+const NIGHT_HEMI = new Color(0x8b9fd4);
 const DAY_GROUND = new Color(0x6b7a4c);
-const NIGHT_GROUND = new Color(0x1c2230);
+const NIGHT_GROUND = new Color(0x34405e);
 const SUN_COLOR = new Color(0xfff2d6);
 const DUSK_SUN = new Color(0xffb070);
-const MOON_COLOR = new Color(0x9fb4ff);
+const MOON_COLOR = new Color(0xc4d2ff);
+/** How strongly the full moon lights the night (the sun is 1.6 at noon), and the sky light under it. */
+const MOON_INTENSITY = 1.05;
+const NIGHT_HEMI_INTENSITY = 0.8;
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -67,7 +71,7 @@ export class SceneHost {
 
   /**
    * Lights the scene for a time of day in [0, 1) (0 midnight, 0.5 noon): the sun moves across the
-   * sky, the sky and fog shift through dusk to night, and a dim bluish moon keeps nights playable.
+   * sky, the sky and fog shift through dusk to night, and a bright full moon lights the night.
    */
   applyDaylight(timeOfDay: number): void {
     const angle = (timeOfDay - 0.25) * Math.PI * 2;
@@ -85,11 +89,12 @@ export class SceneHost {
     } else {
       this.sun.position.set(Math.cos(angle) * 150, Math.max(8, -elev * 150), -50);
       this.sun.color.copy(MOON_COLOR);
-      this.sun.intensity = 0.35;
+      // Rises with the dark, so the hand-over from the sun's last glow is not a jump.
+      this.sun.intensity = 0.05 + (MOON_INTENSITY - 0.05) * smoothstep(-0.05, -0.3, elev);
     }
     this.hemi.color.copy(NIGHT_HEMI).lerp(DAY_HEMI, day);
     this.hemi.groundColor.copy(NIGHT_GROUND).lerp(DAY_GROUND, day);
-    this.hemi.intensity = 0.55 + 0.35 * day;
+    this.hemi.intensity = NIGHT_HEMI_INTENSITY + (0.9 - NIGHT_HEMI_INTENSITY) * day;
   }
 
   /** Restores the fixed midday lighting used by plain worlds and the structure editor. */
