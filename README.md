@@ -118,10 +118,10 @@ to every material, and share what you make as files that anyone can drop into th
     each. A colony kept breeding pays for itself, and every rabbit put on a post costs that income,
     so how many defend is a real choice.
   - **Example replays**: the World menu (M) has a recorded round of each bot style, under *Example
-    replays*. **Watch** one to see how Turtle, Sharpshooter, Breeder, Balanced, Gambler and Expander
+    replays*. **Watch** one to see how Turtle, Sharpshooter, Breeder, Balanced, Gambler, Expander and Fortifier
     differ, and use the speed buttons to fast-forward. They are recorded by `npm run bots:examples`.
-  - **Test bots** play Warren Defense in six styles (turtle, sharpshooter, breeder, balanced,
-    gambler and expander), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
+  - **Test bots** play Warren Defense in seven styles (turtle, sharpshooter, breeder, balanced,
+    gambler, expander and fortifier), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
     bot round saves a `.replay.json`. **Watch a replay…** in the World menu plays one back exactly
     in the game. See [`bots/README.md`](bots/README.md).
 - **Sharing** — export a structure as a `.structure.json` file; import a friend's from the library.

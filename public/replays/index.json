@@ -269,6 +269,51 @@
      "repair"
     ]
    ]
+  },
+  {
+   "style": "fortifier",
+   "name": "Fortifier",
+   "brief": "Breeds first, then grows outward. Keeps almost every rabbit breeding early (3 defenders) on fertility and bounty perks, saves block budget for new rings of walls, and tears the old inner wall down once a newer ring surrounds it: the ground becomes room for more rabbits and the freed blocks pay for the next ring. Drafts half the colony as defenders from 4:00.",
+   "file": "fortifier.replay.json",
+   "seed": 4,
+   "seconds": 828,
+   "wave": 15,
+   "score": 7335,
+   "kills": 150,
+   "moments": [
+    [
+     0,
+     "3 defenders"
+    ],
+    [
+     246,
+     "8 defenders"
+    ],
+    [
+     391,
+     "11 defenders"
+    ],
+    [
+     456,
+     "more budget, repair"
+    ],
+    [
+     521,
+     "repair, reinforce the warren"
+    ],
+    [
+     631,
+     "8 defenders, more budget"
+    ],
+    [
+     676,
+     "7 defenders"
+    ],
+    [
+     821,
+     "repair, reinforce the warren"
+    ]
+   ]
   }
  ]
 }

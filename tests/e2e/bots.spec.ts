@@ -96,7 +96,7 @@ test('the World menu offers an example replay of every play style, and watching 
   const errors = await boot(page);
   await page.keyboard.press('KeyM');
   const rows = page.locator('#example-list [data-example]');
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(7);
   await expect(page.locator('#example-list')).toContainText('Breeder');
   await page.screenshot({ path: `${SHOTS}/41-example-replays.png` });
   await page.locator('#example-list [data-example="breeder"] [data-action="watch-example"]').click();
