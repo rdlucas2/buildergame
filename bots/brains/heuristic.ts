@@ -10,10 +10,12 @@ import type { BuildKind, Persona } from '../personas';
 const RAISE_FROM = 300;
 /** ...and when a roofed nursery is worth it (hawks from 12:00). */
 const ROOF_FROM = 540;
+/** Block budget thickening the walls leaves untouched, for rebuilding breaches. */
+const THICKEN_RESERVE = 150;
 /** Build moves taken at one decision point, besides ones that only spend points. */
 const BUILDS_PER_DECISION = 1;
 /** Options that change the warren's blocks: at most one a decision, as each changes what the others would build. */
-const BUILDS = new Set(['rebuild-breaches', 'raise-walls', 'roof-nursery', 'more-lookouts', 'expand-warren', 'reinforce-doorways']);
+const BUILDS = new Set(['rebuild-breaches', 'raise-walls', 'roof-nursery', 'more-lookouts', 'expand-warren', 'reinforce-doorways', 'thicken-walls']);
 
 /**
  * A persona played by plain rules: deterministic, free and offline. The CI smoke tests and the
@@ -102,6 +104,9 @@ export class HeuristicBrain implements Brain {
     switch (kind) {
       case 'raise-walls':
         return obs.clock >= RAISE_FROM ? w : 0;
+      case 'thicken-walls':
+        // Only with the spare budget to mend breaches afterwards.
+        return free - o.budget >= THICKEN_RESERVE ? w : 0;
       case 'roof-nursery':
         return obs.clock >= ROOF_FROM ? w : 0;
       case 'more-lookouts':

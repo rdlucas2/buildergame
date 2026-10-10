@@ -75,6 +75,9 @@ to every material, and share what you make as files that anyone can drop into th
     Five blocks, keys 1–5: **Wood**, **Stone**, **Brick** and **Iron walls**, each tougher and
     dearer (brick unlocks at 3:00 or 600 points, iron at 8:00 or 3000 points), and the **Lookout
     post**. The bar shows each block's cost and hit points, and a lock on those not unlocked yet.
+  - **Thicken the walls** (a move the test bots use) adds a second wall just inside the outer one, a
+    side at a time and two layers deep, so predators must chew through both. The rabbits keep their
+    doorways.
   - **Lookout posts** are the yellow blocks with a red flag. A defender stands on top of each, and
     every defender needs one. Make the top block of a wall a post, so defenders can walk the wall from
     post to post. Fortify shows how many posts there are and how many are manned. Library structures

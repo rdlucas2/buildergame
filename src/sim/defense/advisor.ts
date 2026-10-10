@@ -44,6 +44,47 @@ function lowWallTops(d: Defense): Cell[] {
     .map(({ x, z }) => ({ x, y: 3, z }));
 }
 
+/** Layers of wall that can be added inside the outer ring (each one cell further in). */
+const MAX_LAYERS = 2;
+
+/**
+ * The next stretch of a second wall just inside the outer ring, one side at a time (a whole layer
+ * costs more than a young warren has spare): predators chew through the outer wall and then this
+ * one, so it doubles what a breach costs them. It matches the wall's height (4 once tigers are
+ * coming) and leaves the rabbits' doorways open right through. Null when the warren is too small
+ * for it, or every side of every layer is built.
+ */
+function thickening(d: Defense): Cell[] | null {
+  const b = d.base;
+  const f = b.footprint();
+  if (!f) return null;
+  const height = d.clock >= RAISE_FROM ? 4 : 3;
+  for (let k = 1; k <= MAX_LAYERS; k++) {
+    const x0 = f.x0 + k, x1 = f.x1 - k, z0 = f.z0 + k, z1 = f.z1 - k;
+    if (x1 - x0 < 6 || z1 - z0 < 6) return null;
+    // North and south take the cells between the corners; west and east take the corners too.
+    const sides: Array<Array<{ x: number; z: number; ox: number; oz: number }>> = [[], [], [], []];
+    for (let x = x0 + 1; x < x1; x++) {
+      sides[0].push({ x, z: z0, ox: x, oz: f.z0 });
+      sides[1].push({ x, z: z1, ox: x, oz: f.z1 });
+    }
+    for (let z = z0; z <= z1; z++) {
+      sides[2].push({ x: x0, z, ox: f.x0, oz: z });
+      sides[3].push({ x: x1, z, ox: f.x1, oz: z });
+    }
+    for (const side of sides) {
+      const out: Cell[] = [];
+      for (const { x, z, ox, oz } of side) {
+        // A doorway in the outer wall stays a doorway through this one.
+        const doorway = !b.solidAt(ox, 0, oz) && b.solidAt(ox, 1, oz);
+        for (let y = doorway ? 1 : 0; y < height; y++) if (!b.solidAt(x, y, z)) out.push({ x, y, z });
+      }
+      if (out.length) return out;
+    }
+  }
+  return null;
+}
+
 /**
  * Holes broken through the ring: wall columns open at heights 1 and 2 next to wall that still
  * stands (a rabbits' doorway is only open at height 0). Putting back those two blocks leaves at most
@@ -191,6 +232,9 @@ export function buildOptions(d: Defense): BuildOption[] {
 
   const tops = lowWallTops(d);
   add({ id: 'raise-walls', label: 'Raise the walls', description: 'Add a fourth course on top of the 3-high walls so tigers (from 8:00) cannot leap in.', actions: placeAll(tops, 'cobblestone'), budget: tops.length * blockCost('cobblestone'), points: 0 });
+
+  const layer = thickening(d);
+  if (layer) add({ id: 'thicken-walls', label: 'Thicken the walls', description: 'Add a second wall just inside the outer ring, one side at a time, so predators must chew through two walls to get in. The rabbits keep their doorways.', actions: placeAll(layer, best), budget: layer.length * blockCost(best), points: 0 });
 
   const roof = nursery(d);
   add({ id: 'roof-nursery', label: 'Roof a nursery', description: 'A 5x5 roof in the middle of the warren for rabbits to hide under from hawks (from 12:00).', actions: placeAll(roof, 'planks'), budget: roof.length * blockCost('planks'), points: 0 });

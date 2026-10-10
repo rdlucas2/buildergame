@@ -21,9 +21,9 @@ npm run bots -- --help
 
 | Style | Plays |
 | --- | --- |
-| `turtle` | Walls first: rebuilds breaches, mends, raises and strengthens; a small guard of defenders, drafting more from 5:00. |
+| `turtle` | Walls first: rebuilds breaches, mends, raises, thickens and strengthens; a small guard of defenders, drafting more from 5:00. |
 | `sharpshooter` | Firepower first: many defenders, more lookout posts, weapon perks. |
-| `breeder` | Economy first: most rabbits breed and forage, a roofed nursery, fertility and toughness perks; from 4:00 it drafts half the colony as defenders. |
+| `breeder` | Economy first: early waves are easy, so almost every rabbit breeds and forages (3 defenders), with fertility and bounty perks first; spare budget goes into a second wall inside the first, a side at a time; from 2:30 it drafts half the colony as defenders. |
 | `balanced` | A bit of everything; walls raised before tigers and a roof before hawks. |
 | `gambler` | Calls waves early for bonus points, redeals plain perk offers, likes rare cards. |
 | `expander` | Grows the warren: saves budget for new rings of walls lined with lookout posts, for room for more rabbits and posts for more defenders. Plays for the long game past 20:00. |
@@ -75,7 +75,7 @@ save the browser and live TypeSafe for confirming.
 A bot decides every 10 seconds of round time (`--every`), and sooner when a perk offer is waiting.
 Code works out what is possible. `buildOptions` in `src/sim/defense/advisor.ts` lists ready-made
 build moves such as rebuilding breaches, raising the walls, roofing a nursery, adding lookouts,
-expanding the warren with a new ring of walls, repairing, reinforcing, buying budget or calling a
+thickening the walls (a second wall inside the first, a side at a time), expanding the warren with a new ring of walls, repairing, reinforcing, buying budget or calling a
 wave. They are the moves a player has in the Shop and in Fortify. The brain only chooses among them and
 never invents coordinates.
 

@@ -8,7 +8,7 @@ export const STYLES = ['turtle', 'sharpshooter', 'breeder', 'balanced', 'gambler
 export type Style = (typeof STYLES)[number];
 
 /** Build moves the advisor offers (`buildOptions`), without the tier suffix of `strengthen-<tier>`. */
-export type BuildKind = 'rebuild-breaches' | 'raise-walls' | 'roof-nursery' | 'more-lookouts' | 'expand-warren' | 'reinforce-doorways' | 'repair' | 'buy-budget' | 'reinforce' | 'call-wave';
+export type BuildKind = 'rebuild-breaches' | 'raise-walls' | 'roof-nursery' | 'more-lookouts' | 'expand-warren' | 'reinforce-doorways' | 'thicken-walls' | 'repair' | 'buy-budget' | 'reinforce' | 'call-wave';
 
 export interface Persona {
   style: Style;
@@ -42,7 +42,7 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
     defenders: 0.3,
     minDefenders: 3,
     draft: { from: 300, share: 0.4 },
-    build: { 'rebuild-breaches': 10, 'reinforce-doorways': 8, repair: 9, 'raise-walls': 8, 'roof-nursery': 7, reinforce: 6, 'buy-budget': 5, 'more-lookouts': 2 },
+    build: { 'rebuild-breaches': 10, 'thicken-walls': 7, 'reinforce-doorways': 8, repair: 9, 'raise-walls': 8, 'roof-nursery': 7, reinforce: 6, 'buy-budget': 5, 'more-lookouts': 2 },
     perks: { regen: 4, armour: 3, budget: 3, damage: 1.5 },
     rarity: 1.5,
     rerollBelow: -1,
@@ -63,12 +63,12 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
   breeder: {
     style: 'breeder',
     name: 'Breeder',
-    brief: 'Economy first. Keeps most rabbits breeding so the colony grows and forages, shelters them under a roofed nursery, then drafts half of them as defenders once the colony is big (from 4:00). Likes fertility and toughness perks.',
-    defenders: 0.25,
+    brief: 'Economy first. The early waves are easy, so it keeps almost every rabbit breeding (3 defenders), takes the fertility and bounty perks first, and puts the surplus into layers of wall, a second wall inside the first, one side at a time. From 2:30 it drafts half the colony as defenders.',
+    defenders: 0.15,
     minDefenders: 3,
-    draft: { from: 240, share: 0.5 },
-    build: { 'roof-nursery': 9, 'rebuild-breaches': 9, repair: 6, 'raise-walls': 6, 'reinforce-doorways': 5, 'more-lookouts': 3, reinforce: 3, 'buy-budget': 3 },
-    perks: { fertility: 5, armour: 3, regen: 2, bounty: 2, budget: 2 },
+    draft: { from: 150, share: 0.5 },
+    build: { 'rebuild-breaches': 9, 'thicken-walls': 8, 'roof-nursery': 7, repair: 6, 'raise-walls': 6, 'reinforce-doorways': 5, 'more-lookouts': 4, reinforce: 3, 'buy-budget': 3 },
+    perks: { fertility: 6, bounty: 3, budget: 3, armour: 3, regen: 2 },
     rarity: 1.5,
     rerollBelow: -1,
     council: ['rabbits', 'fertility', 'armour', 'walls', 'damage', 'budget', 'startWeapon', 'cards', 'rerolls'],
