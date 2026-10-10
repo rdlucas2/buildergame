@@ -15,7 +15,7 @@ const THICKEN_RESERVE = 150;
 /** Build moves taken at one decision point, besides ones that only spend points. */
 const BUILDS_PER_DECISION = 1;
 /** Options that change the warren's blocks: at most one a decision, as each changes what the others would build. */
-const BUILDS = new Set(['rebuild-breaches', 'raise-walls', 'roof-nursery', 'more-lookouts', 'expand-warren', 'reinforce-doorways', 'thicken-walls']);
+const BUILDS = new Set(['rebuild-breaches', 'raise-walls', 'roof-nursery', 'more-lookouts', 'expand-warren', 'reinforce-doorways', 'thicken-walls', 'dismantle-inner']);
 
 /**
  * A persona played by plain rules: deterministic, free and offline. The CI smoke tests and the

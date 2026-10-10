@@ -4,11 +4,11 @@ import type { PerkKind } from '../src/core/defense-state';
  * Play styles for the test bots. Each is a short brief (what the TypeSafe brain is told about how
  * to play) plus the weights the heuristic brain plays the same style with.
  */
-export const STYLES = ['turtle', 'sharpshooter', 'breeder', 'balanced', 'gambler', 'expander'] as const;
+export const STYLES = ['turtle', 'sharpshooter', 'breeder', 'balanced', 'gambler', 'expander', 'fortifier'] as const;
 export type Style = (typeof STYLES)[number];
 
 /** Build moves the advisor offers (`buildOptions`), without the tier suffix of `strengthen-<tier>`. */
-export type BuildKind = 'rebuild-breaches' | 'raise-walls' | 'roof-nursery' | 'more-lookouts' | 'expand-warren' | 'reinforce-doorways' | 'thicken-walls' | 'repair' | 'buy-budget' | 'reinforce' | 'call-wave';
+export type BuildKind = 'rebuild-breaches' | 'raise-walls' | 'roof-nursery' | 'more-lookouts' | 'expand-warren' | 'reinforce-doorways' | 'thicken-walls' | 'dismantle-inner' | 'repair' | 'buy-budget' | 'reinforce' | 'call-wave';
 
 export interface Persona {
   style: Style;
@@ -38,12 +38,12 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
   turtle: {
     style: 'turtle',
     name: 'Turtle',
-    brief: 'Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps only a small guard of defenders. Spends points on repairs and stronger blocks before anything else.',
-    defenders: 0.3,
-    minDefenders: 3,
-    draft: { from: 300, share: 0.4 },
-    build: { 'rebuild-breaches': 10, 'thicken-walls': 7, 'reinforce-doorways': 8, repair: 9, 'raise-walls': 8, 'roof-nursery': 7, reinforce: 6, 'buy-budget': 5, 'more-lookouts': 2 },
-    perks: { regen: 4, armour: 3, budget: 3, damage: 1.5 },
+    brief: 'Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps a modest guard of defenders, drafting half the colony from 4:00 and taking damage perks. Spends points on repairs and stronger blocks before anything else.',
+    defenders: 0.4,
+    minDefenders: 4,
+    draft: { from: 240, share: 0.5 },
+    build: { 'rebuild-breaches': 10, 'thicken-walls': 7, 'reinforce-doorways': 8, repair: 9, 'raise-walls': 8, 'roof-nursery': 7, reinforce: 6, 'buy-budget': 5, 'more-lookouts': 6 },
+    perks: { regen: 4, armour: 3, budget: 3, damage: 3, rate: 2 },
     rarity: 1.5,
     rerollBelow: -1,
     council: ['walls', 'budget', 'armour', 'rabbits', 'damage', 'fertility', 'startWeapon', 'rerolls', 'cards'],
@@ -108,6 +108,20 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
     rarity: 2,
     rerollBelow: -1,
     council: ['damage', 'budget', 'rabbits', 'walls', 'startWeapon', 'armour', 'fertility', 'cards', 'rerolls'],
+    saves: true,
+  },
+  fortifier: {
+    style: 'fortifier',
+    name: 'Fortifier',
+    brief: 'Breeds first, then grows outward. Keeps almost every rabbit breeding early (3 defenders) on fertility and bounty perks, saves block budget for new rings of walls, and tears the old inner wall down once a newer ring surrounds it: the ground becomes room for more rabbits and the freed blocks pay for the next ring. Drafts half the colony as defenders from 4:00.',
+    defenders: 0.15,
+    minDefenders: 3,
+    draft: { from: 240, share: 0.5 },
+    build: { 'expand-warren': 12, 'dismantle-inner': 12, 'rebuild-breaches': 10, repair: 8, 'buy-budget': 8, 'more-lookouts': 6, 'raise-walls': 6, reinforce: 5, 'roof-nursery': 4 },
+    perks: { fertility: 6, bounty: 3, budget: 4, armour: 2, damage: 2, regen: 1.5 },
+    rarity: 1.5,
+    rerollBelow: -1,
+    council: ['rabbits', 'fertility', 'budget', 'walls', 'armour', 'damage', 'startWeapon', 'cards', 'rerolls'],
     saves: true,
   },
 };

@@ -3,45 +3,45 @@
   {
    "style": "turtle",
    "name": "Turtle",
-   "brief": "Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps only a small guard of defenders. Spends points on repairs and stronger blocks before anything else.",
+   "brief": "Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps a modest guard of defenders, drafting half the colony from 4:00 and taking damage perks. Spends points on repairs and stronger blocks before anything else.",
    "file": "turtle.replay.json",
    "seed": 1,
-   "seconds": 738,
-   "wave": 13,
-   "score": 6193,
-   "kills": 145,
+   "seconds": 786,
+   "wave": 14,
+   "score": 6933,
+   "kills": 153,
    "moments": [
     [
-     86,
-     "thicken the walls"
+     0,
+     "6 defenders, more lookouts"
     ],
     [
-     206,
-     "5 defenders"
+     126,
+     "reinforce the warren"
     ],
     [
-     291,
+     236,
      "repair, reinforce doorways"
     ],
     [
-     346,
-     "8 defenders, reinforce the warren"
+     306,
+     "thicken the walls"
     ],
     [
-     466,
-     "reinforce doorways"
+     426,
+     "14 defenders"
     ],
     [
-     576,
-     "6 defenders, roof a nursery"
+     521,
+     "reinforce the warren"
     ],
     [
-     631,
-     "repair, roof a nursery"
+     666,
+     "8 defenders"
     ],
     [
-     731,
-     "repair, roof a nursery"
+     746,
+     "repair"
     ]
    ]
   },
@@ -50,43 +50,43 @@
    "name": "Sharpshooter",
    "brief": "Firepower first. Puts many rabbits on lookouts, builds more lookout posts, and takes every perk that makes the main weapon hit harder, faster or further. Walls only need to hold long enough for the shooting.",
    "file": "sharpshooter.replay.json",
-   "seed": 5,
-   "seconds": 847,
-   "wave": 15,
-   "score": 11665,
-   "kills": 162,
+   "seed": 1,
+   "seconds": 792,
+   "wave": 14,
+   "score": 9465,
+   "kills": 159,
    "moments": [
     [
      0,
      "8 defenders, more lookouts"
     ],
     [
-     191,
-     "10 defenders"
+     181,
+     "reinforce doorways"
     ],
     [
-     281,
-     "13 defenders, reinforce the warren"
+     271,
+     "12 defenders"
     ],
     [
-     371,
-     "14 defenders"
+     326,
+     "13 defenders"
     ],
     [
      481,
      "reinforce doorways"
     ],
     [
-     566,
-     "11 defenders"
+     546,
+     "roof a nursery"
     ],
     [
-     756,
-     "repair, roof a nursery, reinforce the warren"
+     676,
+     "7 defenders"
     ],
     [
-     841,
-     "5 defenders, repair, roof a nursery"
+     786,
+     "repair, roof a nursery"
     ]
    ]
   },
@@ -96,42 +96,42 @@
    "brief": "Economy first. The early waves are easy, so it keeps almost every rabbit breeding (3 defenders), takes the fertility and bounty perks first, and puts the surplus into layers of wall, a second wall inside the first, one side at a time. From 2:30 it drafts half the colony as defenders.",
    "file": "breeder.replay.json",
    "seed": 2,
-   "seconds": 785,
+   "seconds": 784,
    "wave": 14,
-   "score": 10668,
-   "kills": 139,
+   "score": 7507,
+   "kills": 135,
    "moments": [
     [
      0,
      "3 defenders"
     ],
     [
-     161,
-     "more lookouts"
+     151,
+     "7 defenders"
     ],
     [
-     226,
-     "repair"
+     236,
+     "repair, reinforce doorways"
     ],
     [
-     301,
-     "raise the walls"
+     271,
+     "repair, reinforce doorways"
     ],
     [
-     426,
-     "thicken the walls"
+     326,
+     "12 defenders"
     ],
     [
-     556,
-     "9 defenders"
+     501,
+     "reinforce the warren"
     ],
     [
-     636,
-     "roof a nursery, repair"
+     666,
+     "7 defenders"
     ],
     [
      776,
-     "roof a nursery, repair, reinforce the warren"
+     "roof a nursery, repair"
     ]
    ]
   },
@@ -141,38 +141,38 @@
    "brief": "A bit of everything. About 40% defenders, walls kept mended and raised before tigers and hawks arrive, and perks for the main weapon or toughness, rarest first.",
    "file": "balanced.replay.json",
    "seed": 3,
-   "seconds": 752,
+   "seconds": 753,
    "wave": 14,
-   "score": 7306,
-   "kills": 152,
+   "score": 10283,
+   "kills": 155,
    "moments": [
     [
      0,
      "6 defenders, more lookouts"
     ],
     [
-     181,
-     "repair, reinforce doorways"
-    ],
-    [
-     281,
+     206,
      "reinforce the warren"
     ],
     [
-     306,
-     "more lookouts"
+     261,
+     "7 defenders"
     ],
     [
-     456,
-     "11 defenders"
+     336,
+     "reinforce the warren"
     ],
     [
-     546,
+     511,
+     "10 defenders, repair, reinforce the warren"
+    ],
+    [
+     591,
      "roof a nursery"
     ],
     [
-     666,
-     "8 defenders, repair"
+     676,
+     "6 defenders"
     ],
     [
      741,
@@ -186,42 +186,42 @@
    "brief": "Takes risks for rewards. Calls waves early for bonus points whenever the field is clear, redeals plain perk offers hoping for rare ones, and favours rare, high-risk cards like bounty and multishot.",
    "file": "gambler.replay.json",
    "seed": 2,
-   "seconds": 776,
+   "seconds": 771,
    "wave": 16,
-   "score": 9015,
-   "kills": 151,
+   "score": 9907,
+   "kills": 168,
    "moments": [
     [
      0,
      "7 defenders, more lookouts"
     ],
     [
-     163,
-     "call the next wave"
+     174,
+     "reinforce doorways"
     ],
     [
-     274,
+     239,
+     "9 defenders, repair"
+    ],
+    [
+     311,
+     "more lookouts, repair"
+    ],
+    [
+     390,
+     "13 defenders"
+    ],
+    [
+     561,
+     "12 defenders, call the next wave, reinforce the warren"
+    ],
+    [
+     652,
+     "7 defenders"
+    ],
+    [
+     722,
      "repair"
-    ],
-    [
-     329,
-     "reinforce the warren"
-    ],
-    [
-     469,
-     "10 defenders"
-    ],
-    [
-     599,
-     "reinforce the warren"
-    ],
-    [
-     714,
-     "repair, roof a nursery"
-    ],
-    [
-     769,
-     "repair, roof a nursery"
     ]
    ]
   },
@@ -230,43 +230,88 @@
    "name": "Expander",
    "brief": "Grows the warren. Saves block budget to build new rings of walls further out, lined with lookout posts, so there is room for more rabbits and posts for more defenders; buys budget with points. Plays for the long game past 20:00.",
    "file": "expander.replay.json",
-   "seed": 4,
-   "seconds": 737,
+   "seed": 5,
+   "seconds": 744,
    "wave": 13,
-   "score": 6883,
-   "kills": 151,
+   "score": 7879,
+   "kills": 140,
    "moments": [
     [
      0,
      "7 defenders"
     ],
     [
-     281,
+     191,
+     "8 defenders"
+    ],
+    [
+     301,
+     "11 defenders, reinforce the warren"
+    ],
+    [
+     411,
+     "expand the warren"
+    ],
+    [
+     511,
      "more budget"
     ],
     [
-     371,
-     "12 defenders"
+     566,
+     "7 defenders"
     ],
     [
-     456,
+     636,
+     "repair, more budget"
+    ],
+    [
+     731,
      "repair"
+    ]
+   ]
+  },
+  {
+   "style": "fortifier",
+   "name": "Fortifier",
+   "brief": "Breeds first, then grows outward. Keeps almost every rabbit breeding early (3 defenders) on fertility and bounty perks, saves block budget for new rings of walls, and tears the old inner wall down once a newer ring surrounds it: the ground becomes room for more rabbits and the freed blocks pay for the next ring. Drafts half the colony as defenders from 4:00.",
+   "file": "fortifier.replay.json",
+   "seed": 4,
+   "seconds": 828,
+   "wave": 15,
+   "score": 7335,
+   "kills": 150,
+   "moments": [
+    [
+     0,
+     "3 defenders"
     ],
     [
-     536,
-     "14 defenders"
+     246,
+     "8 defenders"
     ],
     [
-     611,
-     "15 defenders, more budget"
-    ],
-    [
-     656,
+     391,
      "11 defenders"
     ],
     [
-     701,
-     "repair"
+     456,
+     "more budget, repair"
+    ],
+    [
+     521,
+     "repair, reinforce the warren"
+    ],
+    [
+     631,
+     "8 defenders, more budget"
+    ],
+    [
+     676,
+     "7 defenders"
+    ],
+    [
+     821,
+     "repair, reinforce the warren"
     ]
    ]
   }

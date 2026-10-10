@@ -69,6 +69,8 @@ export const WAVE_BUDGET = 30;
 export const WAVE_BUDGET_GROWTH = 2;
 /** How much faster rabbits grow up and breed in a round than in a wild world. */
 export const BREED_PACE = 3;
+/** Highest level a breeder may stand at: the steps inside the corners, but not the wall top (level 3). */
+const BREEDER_CEILING = 2;
 /** Points a grown breeder forages per second: a colony kept breeding pays for itself, and every rabbit put on a post costs that. */
 export const FORAGE_RATE = 0.15;
 /** Seconds between alerts that the core is under attack. */
@@ -295,6 +297,8 @@ export class Defense implements DefenseContext {
     // Rabbits in a warren live on grass alone: no water needed. They grow up and breed faster than
     // wild ones, so a warren fills the room it has within a round.
     pop.needsWater = false;
+    // The wall top (reached by steps) is for defenders: breeders stay below it, inside the warren.
+    pop.breederCeiling = BREEDER_CEILING;
     pop.breedPace = BREED_PACE;
     pop.caps = { prey: this.room };
     pop.behaviourFor = (c) => (c.species === 'predator' ? (defOf(c).abilities.flier ? this.hawk : this.raider) : c.role === 'defender' ? this.defender : this.breeder);

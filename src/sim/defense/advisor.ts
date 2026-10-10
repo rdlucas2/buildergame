@@ -86,6 +86,34 @@ function thickening(d: Defense): Cell[] | null {
 }
 
 /**
+ * Blocks of the old ring of walls inside the outer one, once the outer ring is whole: the ring
+ * `EXPANSION_GAP` cells in from the footprint's edge, where the last expansion started from. Null
+ * when there is no inner ring, or the outer one has a hole in it (the old wall still guards).
+ */
+function innerWall(d: Defense): Cell[] | null {
+  const b = d.base;
+  const f = b.footprint();
+  if (!f) return null;
+  const k = EXPANSION_GAP;
+  const x0 = f.x0 + k, x1 = f.x1 - k, z0 = f.z0 + k, z1 = f.z1 - k;
+  if (x1 - x0 < 6 || z1 - z0 < 6) return null;
+  // The outer ring must be whole: wall at ground level and head height all round.
+  for (const { x, z } of ring(d)) if (!b.solidAt(x, 0, z) || !b.solidAt(x, 1, z)) return null;
+  const cells: Cell[] = [];
+  let standing = 0;
+  let total = 0;
+  for (let z = z0; z <= z1; z++)
+    for (let x = x0; x <= x1; x++) {
+      if (x !== x0 && x !== x1 && z !== z0 && z !== z1) continue;
+      total++;
+      if (b.solidAt(x, 1, z)) standing++;
+      for (let y = 0; y < b.size.y; y++) if (b.solidAt(x, y, z) && b.materialAt(x, y, z) !== CORE) cells.push({ x, y, z });
+    }
+  // It has to be a ring of walls, not a stray block or two.
+  return standing >= total * 0.5 ? cells : null;
+}
+
+/**
  * Holes broken through the ring: wall columns open at heights 1 and 2 next to wall that still
  * stands (a rabbits' doorway is only open at height 0). Putting back those two blocks leaves at most
  * a doorway.
@@ -136,8 +164,7 @@ export const EXPANSION_GAP = 4;
 /**
  * A new ring of walls `EXPANSION_GAP` cells outside the warren's footprint (null when it wouldn't
  * fit in the building area): stone, 3 high (4 once tigers are coming), every other top block a
- * lookout post, a 1-high rabbit gap in the middle of each side (as in the starter warren, so rabbits
- * that leave can get back in), and steps up inside two corners. The ground between the rings
+ * lookout post, sealed all round (as the starter warren is), and steps up inside two corners. The ground between the rings
  * becomes room for more rabbits.
  */
 export function expansion(d: Defense): Array<{ x: number; y: number; z: number; material: string }> | null {
@@ -152,11 +179,8 @@ export function expansion(d: Defense): Array<{ x: number; y: number; z: number; 
   if (x0 < b.origin.x || z0 < b.origin.z || x1 >= b.origin.x + BASE_SIZE.x || z1 >= b.origin.z + BASE_SIZE.z) return null;
   const height = d.clock >= RAISE_FROM ? 4 : 3;
   const out: Array<{ x: number; y: number; z: number; material: string }> = [];
-  const mx = Math.floor((x0 + x1) / 2);
-  const mz = Math.floor((z0 + z1) / 2);
-  const gap = (x: number, z: number) => (x === mx && (z === z0 || z === z1)) || (z === mz && (x === x0 || x === x1));
   const wall = (x: number, z: number) => {
-    for (let y = gap(x, z) ? 1 : 0; y < height; y++) if (!b.solidAt(x, y, z)) out.push({ x, y, z, material: y === height - 1 && (x + z) % 2 === 0 ? LOOKOUT : 'cobblestone' });
+    for (let y = 0; y < height; y++) if (!b.solidAt(x, y, z)) out.push({ x, y, z, material: y === height - 1 && (x + z) % 2 === 0 ? LOOKOUT : 'cobblestone' });
   };
   for (let x = x0; x <= x1; x++) {
     wall(x, z0);
@@ -235,6 +259,17 @@ export function buildOptions(d: Defense): BuildOption[] {
 
   const layer = thickening(d);
   if (layer) add({ id: 'thicken-walls', label: 'Thicken the walls', description: 'Add a second wall just inside the outer ring, one side at a time, so predators must chew through two walls to get in. The rabbits keep their doorways.', actions: placeAll(layer, best), budget: layer.length * blockCost(best), points: 0 });
+
+  const inner = innerWall(d);
+  if (inner)
+    add({
+      id: 'dismantle-inner',
+      label: 'Dismantle the inner wall',
+      description: 'A newer ring of walls now surrounds the old one. Tear the old ring down: the ground it stood on becomes room for rabbits and its blocks free budget for the next ring.',
+      actions: inner.map((c): DefenseAction => ({ type: 'remove', ...c })),
+      budget: -inner.reduce((sum, c) => sum + blockCost(d.base.materialAt(c.x, c.y, c.z) ?? 'cobblestone'), 0),
+      points: 0,
+    });
 
   const roof = nursery(d);
   add({ id: 'roof-nursery', label: 'Roof a nursery', description: 'A 5x5 roof in the middle of the warren for rabbits to hide under from hawks (from 12:00).', actions: placeAll(roof, 'planks'), budget: roof.length * blockCost('planks'), points: 0 });

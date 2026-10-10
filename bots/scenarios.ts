@@ -218,6 +218,17 @@ export const SCENARIOS: readonly Scenario[] = [
     },
   },
   {
+    name: 'fortifier-recycles',
+    about: 'The fortifier tears the old inner wall down after each ring it builds, and ends up with more room than it started with.',
+    async check(f) {
+      const runs = (await f.freshRounds()).filter((r) => r.style === 'fortifier');
+      const count = (r: (typeof runs)[number], what: string) => r.run.decisions.filter((d) => d.why.includes(what)).length;
+      const rows = runs.map((r) => ({ r, built: count(r, 'expand the warren'), torn: count(r, 'dismantle the inner wall') }));
+      const bad = rows.filter((x) => x.built === 0 || x.torn < x.built - 1 || x.torn > x.built);
+      return { pass: bad.length === 0, detail: rows.map((x) => `seed ${x.r.seed}: ${x.built} rings, ${x.torn} torn down, room ${x.r.start.room} → ${x.r.peak.room}`).join('; ') };
+    },
+  },
+  {
     name: 'budget-grows',
     about: 'Every wave adds block budget.',
     async check(f) {

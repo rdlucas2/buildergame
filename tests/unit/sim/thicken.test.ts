@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildOptions } from '../../../src/sim/defense/advisor';
+import { starterPlan } from '../../../src/sim/defense/design';
 import { startRound } from '../../../src/sim/defense/replay';
 
 function round() {
@@ -28,25 +29,28 @@ describe('thicken the walls', () => {
     }
   });
 
-  it('keeps the rabbits their doorways, the one core, and most of their room', () => {
+  it('keeps the one core and most of the room', () => {
     const d = round();
     const roomBefore = d.room;
-    const doorways = () => {
-      const f = d.base.footprint()!;
-      let n = 0;
-      for (let z = f.z0; z <= f.z1; z++) for (let x = f.x0; x <= f.x1; x++) if ((x === f.x0 || x === f.x1 || z === f.z0 || z === f.z1) && !d.base.solidAt(x, 0, z) && d.base.solidAt(x, 1, z)) n++;
-      return n;
-    };
-    const gaps = doorways();
     const o = buildOptions(d).find((x) => x.id === 'thicken-walls')!;
     for (const a of o.actions) expect(d.apply(a).ok).toBe(true);
-    expect(doorways()).toBe(gaps);
     expect(d.base.coreCells().length).toBe(8);
     expect(d.room).toBeGreaterThanOrEqual(Math.floor(roomBefore * 0.8));
-    // A doorway is still open right through the new layer: rabbits can walk in and out.
+  });
+
+  it('leaves a doorway open right through a custom warren that has one', () => {
+    const plan = starterPlan();
+    const north = plan.blocks.filter((b) => b.z === 0 && b.y < 3).map((b) => b.x);
+    const mid = Math.floor((Math.min(...north) + Math.max(...north)) / 2);
+    plan.blocks = plan.blocks.filter((b) => !(b.x === mid && b.z === 0 && b.y === 0));
+    const d = startRound(1, {}, undefined, plan).defense!;
     const f = d.base.footprint()!;
-    const mx = Math.floor((f.x0 + f.x1) / 2);
-    expect(d.base.solidAt(mx, 0, f.z0 + 1)).toBe(false);
+    expect(d.base.solidAt(f.x0 + mid, 0, f.z0)).toBe(false);
+    const o = buildOptions(d).find((x) => x.id === 'thicken-walls')!;
+    for (const a of o.actions) expect(d.apply(a).ok).toBe(true);
+    expect(d.base.solidAt(f.x0 + mid, 0, f.z0 + 1)).toBe(false);
+    expect(d.base.solidAt(f.x0 + mid, 1, f.z0 + 1)).toBe(true);
+    expect(d.base.solidAt(f.x0 + mid + 1, 0, f.z0 + 1)).toBe(true);
   });
 
   it('goes round the warren a side at a time, two layers deep, then there is nothing left', () => {

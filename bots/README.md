@@ -26,6 +26,7 @@ npm run bots -- --help
 | `breeder` | Economy first: early waves are easy, so almost every rabbit breeds and forages (3 defenders), with fertility and bounty perks first; spare budget goes into a second wall inside the first, a side at a time; from 2:30 it drafts half the colony as defenders. |
 | `balanced` | A bit of everything; walls raised before tigers and a roof before hawks. |
 | `gambler` | Calls waves early for bonus points, redeals plain perk offers, likes rare cards. |
+| `fortifier` | Breeds first, then grows outward: saves budget for new rings of walls and tears the old inner wall down once a newer ring surrounds it, so the ground becomes room and the freed blocks pay for the next ring. |
 | `expander` | Grows the warren: saves budget for new rings of walls lined with lookout posts, for room for more rabbits and posts for more defenders. Plays for the long game past 20:00. |
 
 The personas are defined in `personas.ts`: a brief for the model, and weights for the rules.
@@ -46,6 +47,7 @@ save the browser and live TypeSafe for confirming.
   | `core-after-breeders` | Predators only hurt the core once no breeders are left |
   | `rounds-end-at-the-core` | Every lost round ended with the core down |
   | `one-core` | Every round has exactly one core, and no move adds to it |
+  | `fortifier-recycles` | The fortifier tears the old inner wall down after each ring it builds, and ends up with more room |
   | `warren-grows` | Expanding makes room: the expander's room, colony and defenders on posts all grow |
   | `late-game` | With every upgrade, the expander gets past 18:00 (median), and no round reaches 30:00 |
   | `no-water` | No rabbit dies of thirst or goes to drink |
@@ -75,7 +77,7 @@ save the browser and live TypeSafe for confirming.
 A bot decides every 10 seconds of round time (`--every`), and sooner when a perk offer is waiting.
 Code works out what is possible. `buildOptions` in `src/sim/defense/advisor.ts` lists ready-made
 build moves such as rebuilding breaches, raising the walls, roofing a nursery, adding lookouts,
-thickening the walls (a second wall inside the first, a side at a time), expanding the warren with a new ring of walls, repairing, reinforcing, buying budget or calling a
+thickening the walls (a second wall inside the first, a side at a time), dismantling the inner wall once a newer ring surrounds it, expanding the warren with a new ring of walls, repairing, reinforcing, buying budget or calling a
 wave. They are the moves a player has in the Shop and in Fortify. The brain only chooses among them and
 never invents coordinates.
 

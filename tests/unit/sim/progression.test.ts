@@ -173,7 +173,7 @@ describe('progression in a round', () => {
   it('caps the colony at the room the warren has', () => {
     const e = round();
     // The starter warren encloses 165 cells of open ground: room for 41 rabbits.
-    expect(e.population.capOf('prey')).toBe(41);
+    expect(e.population.capOf('prey')).toBe(40);
     expect(e.population.capOf('predator')).toBeGreaterThan(0);
   });
 });

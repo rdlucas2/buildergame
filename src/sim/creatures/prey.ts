@@ -161,7 +161,7 @@ export function flee(pop: Population, c: Creature, threat: Creature, home: HomeA
 /** Runs straight away from the threat (turning aside when the way is blocked), staying at home if it has one. */
 function runFrom(pop: Population, c: Creature, threat: Creature, home: HomeArea | null = null): void {
   if (c.activity === 'flee' && c.path.length > c.step && farther(c.path[c.path.length - 1], c, threat)) return;
-  const body = defOf(c).body;
+  const body = pop.bodyOf(c);
   const away = Math.atan2(c.x - threat.x, c.z - threat.z);
   for (const turn of home ? [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9] : [0, 0.6, -0.6, 1.2, -1.2]) {
     const a = away + turn;
@@ -205,7 +205,7 @@ function goHome(pop: Population, c: Creature, home: HomeArea): void {
 
 /** Plans a way to somewhere inside home, trying the middle first, then a few cells around it. */
 function routeHome(pop: Population, c: Creature, home: HomeArea, urgent: boolean): boolean {
-  const body = defOf(c).body;
+  const body = pop.bodyOf(c);
   const mx = Math.floor((home.x0 + home.x1) / 2);
   const mz = Math.floor((home.z0 + home.z1) / 2);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -234,7 +234,7 @@ function takeCover(pop: Population, c: Creature, threat: Creature, home: HomeAre
     const goal = c.path[c.path.length - 1];
     if (pop.roofed(goal.x, goal.y, goal.z)) return;
   }
-  const body = defOf(c).body;
+  const body = pop.bodyOf(c);
   // Rings outwards: the nearest roofed spot a rabbit can stand in.
   for (let r = 1; r <= COVER_RADIUS; r++)
     for (let dz = -r; dz <= r; dz++)
