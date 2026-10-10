@@ -5,39 +5,39 @@
    "name": "Turtle",
    "brief": "Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps only a small guard of defenders. Spends points on repairs and stronger blocks before anything else.",
    "file": "turtle.replay.json",
-   "seed": 2,
-   "seconds": 740,
+   "seed": 1,
+   "seconds": 738,
    "wave": 13,
-   "score": 6675,
-   "kills": 136,
+   "score": 6193,
+   "kills": 145,
    "moments": [
     [
-     116,
-     "reinforce the warren"
+     86,
+     "thicken the walls"
     ],
     [
-     236,
+     206,
+     "5 defenders"
+    ],
+    [
+     291,
      "repair, reinforce doorways"
     ],
     [
-     301,
-     "7 defenders, raise the walls"
+     346,
+     "8 defenders, reinforce the warren"
     ],
     [
-     391,
-     "9 defenders"
-    ],
-    [
-     521,
-     "reinforce the warren"
+     466,
+     "reinforce doorways"
     ],
     [
      576,
-     "6 defenders, repair, roof a nursery"
+     "6 defenders, roof a nursery"
     ],
     [
      631,
-     "roof a nursery"
+     "repair, roof a nursery"
     ],
     [
      731,
@@ -93,45 +93,45 @@
   {
    "style": "breeder",
    "name": "Breeder",
-   "brief": "Economy first. Keeps most rabbits breeding so the colony grows and forages, shelters them under a roofed nursery, then drafts half of them as defenders once the colony is big (from 4:00). Likes fertility and toughness perks.",
+   "brief": "Economy first. The early waves are easy, so it keeps almost every rabbit breeding (3 defenders), takes the fertility and bounty perks first, and puts the surplus into layers of wall, a second wall inside the first, one side at a time. From 2:30 it drafts half the colony as defenders.",
    "file": "breeder.replay.json",
-   "seed": 1,
-   "seconds": 755,
+   "seed": 2,
+   "seconds": 785,
    "wave": 14,
-   "score": 8578,
-   "kills": 148,
+   "score": 10668,
+   "kills": 139,
    "moments": [
     [
-     126,
-     "reinforce the warren"
+     0,
+     "3 defenders"
     ],
     [
-     236,
-     "repair, reinforce doorways"
+     161,
+     "more lookouts"
+    ],
+    [
+     226,
+     "repair"
     ],
     [
      301,
      "raise the walls"
     ],
     [
-     391,
-     "13 defenders, reinforce the warren"
+     426,
+     "thicken the walls"
     ],
     [
-     466,
-     "repair"
+     556,
+     "9 defenders"
     ],
     [
-     611,
-     "10 defenders"
+     636,
+     "roof a nursery, repair"
     ],
     [
-     666,
-     "6 defenders"
-    ],
-    [
-     746,
-     "repair"
+     776,
+     "roof a nursery, repair, reinforce the warren"
     ]
    ]
   },
