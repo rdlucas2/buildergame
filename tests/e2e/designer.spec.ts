@@ -55,7 +55,7 @@ test('players design their own warren in the builder, with exactly one core, and
   await page.keyboard.press('KeyB');
   await expect(page.locator('#hud-mode')).toHaveText('Warren designer');
   await expect(page.locator('#hotbar .block-slot .slot-name')).toHaveText(['Wood wall', 'Stone wall', 'Brick wall', 'Iron wall', 'Lookout post', 'Core']);
-  expect(await status(page)).toEqual(['Warren design · ▣ 512 of 700 budget · 4 lookout posts · room for 41 rabbits', 'Ready to play: save it (Enter), then start a round with it']);
+  expect(await status(page)).toEqual(['Warren design · ▣ 524 of 700 budget · 4 lookout posts · room for 40 rabbits', 'Ready to play: save it (Enter), then start a round with it']);
 
   // There is only ever one core: placing it again moves it.
   const before = await page.evaluate(() => window.__game!.dimensions()!.blocks);
