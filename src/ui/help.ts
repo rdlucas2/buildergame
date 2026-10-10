@@ -53,7 +53,7 @@ const SECTIONS: Array<[string, Array<[string, string]>]> = [
       ['Elites and bosses', 'Gold elites from 15:00 and a red boss at 10:00 and 20:00: tougher and worth more points'],
       ['Defenders', 'Red scarves: they man the lookout posts and shoot at predators they can see'],
       ['Breeders', 'Everyone else grazes and raises young (no water needed), and runs home when predators come; use − / + to set how many defend'],
-      ['Room', 'The 🏠 in the strip: rabbits the warren has room for, one per 4 cells of ground its walls enclose (up to 120). Wall in more ground for more rabbits'],
+      ['Room', 'The 🏠 in the strip: rabbits the warren has room for, one per 4 cells of ground its walls enclose (up to 200). Wall in more ground for more rabbits'],
       ['P', 'Pause to build, re-allocate and upgrade; speeds are 1×, 1.5×, 2× and 3×'],
       ['F', 'Fortify: build (right click) and break (left click) warren blocks inside the orange area'],
       ['1–5 in Fortify', 'Wood, stone, brick and iron walls (each tougher and dearer; brick and iron unlock later), and the lookout post'],

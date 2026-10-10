@@ -22,7 +22,7 @@ export interface WarrenPlan {
 export const ROOM_PER_CELL = 0.25;
 export const MIN_ROOM = 12;
 /** However big the warren, no more rabbits than this (the simulation has to keep up). */
-export const MAX_ROOM = 120;
+export const MAX_ROOM = 200;
 
 /** Room for rabbits in a warren with `enclosed` cells of open ground inside, plus upgrades. */
 export function roomFor(enclosed: number, extra = 0): number {

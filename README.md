@@ -60,7 +60,7 @@ to every material, and share what you make as files that anyone can drop into th
     the warren), and run back inside when predators come. The − and + buttons set how many defend.
     Extra defenders need extra Lookout Posts to shoot from.
   - **Room**: a warren has room for a rabbit per 4 cells of open ground its walls enclose (🏠 in the
-    strip): 40 in the starter warren, up to 120. The colony breeds up to the room it has, and rabbits
+    strip): 40 in the starter warren, up to 200. The colony breeds up to the room it has, and rabbits
     in a warren grow up and breed 3 times as fast as wild ones, so a bigger warren soon means more
     rabbits, and more defenders for its posts. Room changes only when you change the walls, not when
     predators break them.
@@ -97,15 +97,15 @@ to every material, and share what you make as files that anyone can drop into th
     - **Expand the warren**: a new ring of stone walls 4 blocks out, with lookout posts along every
       other top block, no gap in it and steps up inside two corners. It costs block
       budget, and shows the room it makes before you build it. Expanding again builds the next ring
-      out, until the warren reaches the edge of the building area or 120 rabbits.
+      out, until the warren reaches the edge of the building area or 200 rabbits.
     - **Repair everything**: mends the most worn blocks first, and the core.
     - **Reinforce the warren**: +25% hit points for every block and the core, 8 levels.
     - The weapons, with what unlocks each (defenders always carry the best one unlocked), and the
       perks taken.
   - Kills and waves earn points. The round ends when the core falls, and the summary shows how long
     it held out. Predators get tougher every minute, and from 20:00 every wave is
-    far tougher than the last: a new player lasts about 10 minutes, and a fully upgraded one about
-    20, or a little past it with a warren grown to its full size.
+    far tougher than the last: a new player lasts about 12 minutes, and a fully upgraded one about
+    20, or around 25 with a warren grown to its full size.
   - **Clover and the Warren Council**: every round earns Clover for time survived, each 5-minute
     milestone, kills and achievements. Spend it at the **Warren Council** (from the round summary or
     the World menu) on permanent upgrades that make every later round easier: more damage, tougher
