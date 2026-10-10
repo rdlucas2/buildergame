@@ -18,6 +18,8 @@ export interface Persona {
   /** Share of grown rabbits to make defenders, and the fewest defenders to keep. */
   defenders: number;
   minDefenders: number;
+  /** From this many seconds into a round, the share of grown rabbits to defend rises to this (a colony built first, then drafted). */
+  draft?: { from: number; share: number };
   /** How much the bot wants each build move when it is on offer (0 never). */
   build: Partial<Record<BuildKind, number>>;
   /** How much the bot likes each kind of perk (1 when not listed). */
@@ -39,6 +41,7 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
     brief: 'Walls first. Keeps the warren sealed and mended, builds high and strong, and keeps only a small guard of defenders. Spends points on repairs and stronger blocks before anything else.',
     defenders: 0.3,
     minDefenders: 3,
+    draft: { from: 300, share: 0.4 },
     build: { 'rebuild-breaches': 10, 'reinforce-doorways': 8, repair: 9, 'raise-walls': 8, 'roof-nursery': 7, reinforce: 6, 'buy-budget': 5, 'more-lookouts': 2 },
     perks: { regen: 4, armour: 3, budget: 3, damage: 1.5 },
     rarity: 1.5,
@@ -60,9 +63,10 @@ export const PERSONAS: Readonly<Record<Style, Persona>> = {
   breeder: {
     style: 'breeder',
     name: 'Breeder',
-    brief: 'Economy first. Keeps most rabbits breeding so the colony grows, shelters them under a roofed nursery, and only adds defenders as numbers allow. Likes fertility and toughness perks.',
+    brief: 'Economy first. Keeps most rabbits breeding so the colony grows and forages, shelters them under a roofed nursery, then drafts half of them as defenders once the colony is big (from 4:00). Likes fertility and toughness perks.',
     defenders: 0.25,
     minDefenders: 3,
+    draft: { from: 240, share: 0.5 },
     build: { 'roof-nursery': 9, 'rebuild-breaches': 9, repair: 6, 'raise-walls': 6, 'reinforce-doorways': 5, 'more-lookouts': 3, reinforce: 3, 'buy-budget': 3 },
     perks: { fertility: 5, armour: 3, regen: 2, bounty: 2, budget: 2 },
     rarity: 1.5,

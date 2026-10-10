@@ -110,6 +110,12 @@ to every material, and share what you make as files that anyone can drop into th
     flawless start, hunting each predator, veteran milestones and more) pay Clover too.
   - Progress is saved in the browser; **Export progress** in the Council saves it as a
     `.profile.json` file to back up or move to another browser.
+  - **Foraging**: grown breeders (rabbits not on a post) forage points all the time, 0.15 a second
+    each. A colony kept breeding pays for itself, and every rabbit put on a post costs that income,
+    so how many defend is a real choice.
+  - **Example replays**: the World menu (M) has a recorded round of each bot style, under *Example
+    replays*. **Watch** one to see how Turtle, Sharpshooter, Breeder, Balanced, Gambler and Expander
+    differ, and use the speed buttons to fast-forward. They are recorded by `npm run bots:examples`.
   - **Test bots** play Warren Defense in six styles (turtle, sharpshooter, breeder, balanced,
     gambler and expander), using plain rules or TypeSafe AI, either headless or in a browser you can watch. Every
     bot round saves a `.replay.json`. **Watch a replay…** in the World menu plays one back exactly
@@ -181,6 +187,7 @@ npm run balance    # headless Warren Defense rounds over many seeds, per policy 
 npm run bots       # test bots play Warren Defense: headless or in a browser, rules or TypeSafe AI
 npm run bots:compare  # the bots' play styles side by side over several seeds
 npm run bots:test  # scenario checks of the rules and balance: headless, offline, no tokens
+npm run bots:examples  # re-record the example replays the game ships (after a rule change)
 ```
 
 The game exposes `window.__game` for automation (the end-to-end tests drive it through this API).

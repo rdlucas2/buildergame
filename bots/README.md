@@ -13,6 +13,7 @@ npm run bots -- --style sharpshooter --brain typesafe       # decisions by TypeS
 npm run bots -- --style gambler --brain mock --show-requests  # TypeSafe's pipeline offline: no key, no tokens
 npm run bots:compare -- --seeds 5 --profile mid             # every style side by side
 npm run bots:verify -- bot-runs/<run>/round-1.replay.json   # replay headless, check the end state
+npm run bots:examples                                       # re-record the example replays the game ships
 npm run bots -- --help
 ```
 
@@ -20,9 +21,9 @@ npm run bots -- --help
 
 | Style | Plays |
 | --- | --- |
-| `turtle` | Walls first: rebuilds breaches, mends, raises and strengthens; a small guard of defenders. |
+| `turtle` | Walls first: rebuilds breaches, mends, raises and strengthens; a small guard of defenders, drafting more from 5:00. |
 | `sharpshooter` | Firepower first: many defenders, more lookout posts, weapon perks. |
-| `breeder` | Economy first: most rabbits breed, a roofed nursery, fertility and toughness perks. |
+| `breeder` | Economy first: most rabbits breed and forage, a roofed nursery, fertility and toughness perks; from 4:00 it drafts half the colony as defenders. |
 | `balanced` | A bit of everything; walls raised before tigers and a roof before hawks. |
 | `gambler` | Calls waves early for bonus points, redeals plain perk offers, likes rare cards. |
 | `expander` | Grows the warren: saves budget for new rings of walls lined with lookout posts, for room for more rabbits and posts for more defenders. Plays for the long game past 20:00. |
@@ -40,6 +41,7 @@ save the browser and live TypeSafe for confirming.
   | Scenario | Checks |
   | --- | --- |
   | `fresh-balance` | Each style lasts between 5:00 and 15:00 |
+  | `styles-compete` | No style is a trap or a clear winner: the longest median is within 1.3× the shortest, and the breeder lasts 10:00 |
   | `upgrades-help` | Upgrades make the warren last longer, to at least 12:00 |
   | `core-after-breeders` | Predators only hurt the core once no breeders are left |
   | `rounds-end-at-the-core` | Every lost round ended with the core down |
@@ -138,6 +140,14 @@ by git.
 A campaign (`--rounds N`) plays round after round from `--seed`, `--seed + 1` and so on. After each
 round the bot is paid Clover and achievements as a player would be, and shops at the Warren Council
 before the next round.
+
+## Example replays
+
+`npm run bots:examples` records one round per style (the seed closest to that style's median, on a
+fresh profile) into `public/replays/`, with an `index.json` the game reads. They show under
+**World (M) → Example replays**, so anyone can watch each strategy play. A unit test
+(`tests/unit/bots/examples.test.ts`) replays every file and fails when a rule change makes one
+stale: run the command again then and commit the new files.
 
 ## Watching a replay
 

@@ -16,7 +16,8 @@
     "bots": "tsx bots/run.ts",
     "bots:compare": "tsx bots/compare.ts",
     "bots:verify": "tsx bots/verify.ts",
-    "bots:test": "tsx bots/test.ts"
+    "bots:test": "tsx bots/test.ts",
+    "bots:examples": "tsx bots/examples.ts"
   },
   "dependencies": {
     "fflate": "^0.8.3",

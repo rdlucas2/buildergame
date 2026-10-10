@@ -19,6 +19,7 @@ import { buildStructureGeometry, StructureGeometryCache } from '../render/struct
 import { SceneHost } from '../render/scene';
 import { renderThumbnail } from '../render/thumbnail';
 import { createVoxelMaterials, type VoxelMaterials } from '../render/voxel-materials';
+import { loadReplayExample, loadReplayExamples, type ReplayExample } from '../storage/replay-examples';
 import { downloadBlob, downloadBytes, downloadText, pickFiles, readFileBytes, readFileText } from '../storage/files';
 import { StructureLibrary } from '../storage/library';
 import { WorldStore } from '../storage/worlds';
@@ -125,7 +126,7 @@ export class Game {
     this.hotbar = [...worlds.getSetting<string[]>('hotbar', DEFAULT_HOTBAR)];
     this.hud = new Hud({
       onLibrary: () => this.openLibrary(),
-      onWorld: () => this.openWorldMenu(),
+      onWorld: () => void this.openWorldMenu(),
       onHelp: () => openHelp(),
       onStructure: () => (this.structureMode ? void this.saveStructure() : void this.enterStructureMode()),
       onSlot: (i) => this.selectHotbarSlot(i),
@@ -517,7 +518,7 @@ export class Game {
         this.openLibrary();
         return true;
       case 'KeyM':
-        this.openWorldMenu();
+        void this.openWorldMenu();
         return true;
       case 'KeyB':
         void this.enterStructureMode();
@@ -780,11 +781,16 @@ export class Game {
     }
   }
 
-  openWorldMenu(): void {
+  /** The example replays the game ships with, fetched the first time the World menu opens. */
+  private replayExamples: Promise<ReplayExample[]> | null = null;
+
+  async openWorldMenu(): Promise<void> {
     if (this.structureMode) return;
+    this.replayExamples ??= loadReplayExamples();
+    const examples = await this.replayExamples;
     const render = (): void => {
       openWorldPanel(
-        { worlds: this.worlds.list(), activeId: this.worldMode.world.id, author: this.worlds.author, persistent: this.library.persistent },
+        { worlds: this.worlds.list(), activeId: this.worldMode.world.id, author: this.worlds.author, persistent: this.library.persistent, examples },
         {
           onOpen: (id) => void this.switchWorld(id).then(() => closePanel()),
           onNew: async () => {
@@ -826,6 +832,12 @@ export class Game {
             const files = await pickFiles('.json,application/json', false);
             if (!files[0]) return;
             const err = await this.watchReplay(await readFileText(files[0]));
+            if (err) toast(err, 'error', 5000);
+            else closePanel();
+          },
+          onWatchExample: async (example) => {
+            const text = await loadReplayExample(example.file);
+            const err = text === null ? `Couldn't load the ${example.name} replay.` : await this.watchReplay(text);
             if (err) toast(err, 'error', 5000);
             else closePanel();
           },
