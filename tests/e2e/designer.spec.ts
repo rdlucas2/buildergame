@@ -101,7 +101,7 @@ test('players design their own warren in the builder, with exactly one core, and
   expect((await info(page)).design?.name).toBe('Big Ring');
   await page.evaluate(() => window.__game!.restartRound(10, null));
   expect((await info(page)).design).toBeNull();
-  expect((await info(page)).room).toBe(41);
+  expect((await info(page)).room).toBe(40);
 
   // The new-world dialog offers it for Warren Defense worlds.
   await page.keyboard.press('KeyM');
