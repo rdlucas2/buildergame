@@ -1,6 +1,6 @@
 import type { CreatureKind, CreatureSpecies, CreatureState } from '../../core/world';
 import { TICK_SECONDS, daylight, isNight } from '../clock';
-import type { Cell, Navigator } from '../navigation';
+import type { Body, Cell, Navigator } from '../navigation';
 import type { Rng } from '../rng';
 import type { SafetyMap } from '../safety';
 import type { ShoreIndex } from '../shores';
@@ -65,8 +65,16 @@ export class Population {
    * speeds rabbits up, so a warren can fill the room it has within a round). Lifespans don't change.
    */
   breedPace = 1;
+  /** Highest level rabbits not on guard may stand at (a warren's wall top is for defenders); null for no limit. */
+  breederCeiling: number | null = null;
 
   /** Age at which a creature is grown (it can breed, and a rabbit can defend). */
+  /** How a creature fits the world: its kind's body, and breeders kept below `breederCeiling`. */
+  bodyOf(c: Creature): Body {
+    const body = defOf(c).body;
+    return this.breederCeiling !== null && c.species === 'prey' && c.role !== 'defender' ? { ...body, ceiling: this.breederCeiling } : body;
+  }
+
   maturityOf(c: Creature): number {
     return defOf(c).maturity / this.breedPace;
   }
@@ -374,7 +382,7 @@ export class Population {
       c.path = [];
       return;
     }
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     const s = this.shores.nearest(c.x, c.z, 160, (sx, sz) => this.nav.standable(sx, 0, sz, body));
     if (!s || !this.route(c, { x: s.x, y: 0, z: s.z })) return this.wander(c, 16);
     c.activity = 'seekWater';
@@ -410,7 +418,7 @@ export class Population {
       c.path = [];
       return;
     }
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     for (let r = 1; r <= 12; r++) {
       for (let k = 0; k < 8; k++) {
         const a = this.rng.range(0, Math.PI * 2);
@@ -427,7 +435,7 @@ export class Population {
   }
 
   wander(c: Creature, radius: number): void {
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     for (let attempt = 0; attempt < 4; attempt++) {
       const a = this.rng.range(0, Math.PI * 2);
       const r = this.rng.range(radius * 0.4, radius);
@@ -447,7 +455,7 @@ export class Population {
 
   /** Walks to somewhere within `spread` cells of another creature. */
   goNear(c: Creature, o: Creature, spread: number): boolean {
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     for (let attempt = 0; attempt < 3; attempt++) {
       const x = Math.round(o.x + this.rng.range(-spread, spread));
       const z = Math.round(o.z + this.rng.range(-spread, spread));
@@ -548,7 +556,7 @@ export class Population {
       return true;
     }
     if (!this.spendSearch(urgent)) return false;
-    const path: PathCell[] | null = this.nav.findPath(from, target, defOf(c).body, nodes, undefined, breach);
+    const path: PathCell[] | null = this.nav.findPath(from, target, this.bodyOf(c), nodes, undefined, breach);
     if (!path || path.length === 0) return false;
     c.path = path;
     c.step = 0;
@@ -568,7 +576,7 @@ export class Population {
   }
 
   private findFood(c: Creature, radius: number): Cell | null {
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     let best: Cell | null = null;
     let bestScore = 40;
     for (let i = 0; i < 20; i++) {
@@ -617,7 +625,7 @@ export class Population {
       return;
     }
     if (c.activity !== 'rest' && c.activity !== 'graze' && c.activity !== 'drink' && c.activity !== 'eat') c.activity = 'idle';
-    const body = defOf(c).body;
+    const body = this.bodyOf(c);
     const x = Math.floor(c.x);
     const z = Math.floor(c.z);
     if (this.nav.standable(x, c.y, z, body)) return;

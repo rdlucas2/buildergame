@@ -6,6 +6,8 @@ export interface Body {
   height: number;
   climb: number;
   drop: number;
+  /** The highest level it may stand at, when something keeps it low. */
+  ceiling?: number;
 }
 
 export const PREY_BODY: Body = { height: 1, climb: 1, drop: 3 };
@@ -77,6 +79,7 @@ export class Navigator {
   /** Can a body of this height stand at (x, y, z)? */
   standable(x: number, y: number, z: number, body: Body): boolean {
     if (!this.inBounds(x, z) || y < 0) return false;
+    if (body.ceiling !== undefined && y > body.ceiling) return false;
     return this.solids.solid(x, y - 1, z) && this.clear(x, y, z, body.height);
   }
 

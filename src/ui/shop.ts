@@ -50,7 +50,7 @@ export function openShop(d: Defense, apply: Apply): PanelHandle {
           'shop-expand',
           'Expand the warren',
           ring
-            ? `A new ring of stone walls ${EXPANSION_GAP} blocks out, with ${ring.posts} lookout posts on top and a rabbit gap in each side: room for ${ring.room} rabbits (${d.room} now), and posts for more defenders. Uses ▣ ${ring.cost} of the block budget (${free} left).`
+            ? `A new ring of stone walls ${EXPANSION_GAP} blocks out, with ${ring.posts} lookout posts on top: room for ${ring.room} rabbits (${d.room} now), and posts for more defenders. Uses ▣ ${ring.cost} of the block budget (${free} left).`
             : `The warren has room for ${d.room} rabbits, as many as it can: there is no space for another ring.`,
           ring ? `Build (▣ ${ring.cost})` : 'Full size',
           ring !== null && free >= ring.cost,

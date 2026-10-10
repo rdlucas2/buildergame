@@ -41,7 +41,8 @@ to every material, and share what you make as files that anyone can drop into th
     for the core and gnaw at it (hawks dive at it unless it is roofed over). Its health is the ❤ in
     the strip, and Repair mends it with the walls.
   - Rabbits in a warren need no water: they live on the grass inside, and the warren goes on any dry
-    ground.
+    ground. The warren is sealed, with no gap in its walls, and breeders stay inside it: the wall top
+    and its steps are for defenders.
   - **Speeds**: pause (**P**), 1×, 1.5×, 2× and 3×, so there is time to build, re-allocate and
     upgrade. Build and buy while paused.
   - Waves come on a clock: the first at 0:30, then about one a minute, whether or not the last one
@@ -59,7 +60,7 @@ to every material, and share what you make as files that anyone can drop into th
     the warren), and run back inside when predators come. The − and + buttons set how many defend.
     Extra defenders need extra Lookout Posts to shoot from.
   - **Room**: a warren has room for a rabbit per 4 cells of open ground its walls enclose (🏠 in the
-    strip): 41 in the starter warren, up to 120. The colony breeds up to the room it has, and rabbits
+    strip): 40 in the starter warren, up to 120. The colony breeds up to the room it has, and rabbits
     in a warren grow up and breed 3 times as fast as wild ones, so a bigger warren soon means more
     rabbits, and more defenders for its posts. Room changes only when you change the walls, not when
     predators break them.
@@ -77,7 +78,7 @@ to every material, and share what you make as files that anyone can drop into th
     post**. The bar shows each block's cost and hit points, and a lock on those not unlocked yet.
   - **Thicken the walls** (a move the test bots use) adds a second wall just inside the outer one, a
     side at a time and two layers deep, so predators must chew through both. The rabbits keep their
-    doorways.
+    doorways (a custom warren can still have them).
   - **Lookout posts** are the yellow blocks with a red flag. A defender stands on top of each, and
     every defender needs one. Make the top block of a wall a post, so defenders can walk the wall from
     post to post. Fortify shows how many posts there are and how many are manned. Library structures
@@ -94,7 +95,7 @@ to every material, and share what you make as files that anyone can drop into th
   - The **Shop** (**U**) has everything in one place, and pauses the round while it's open:
     - **More block budget** (+100) for points.
     - **Expand the warren**: a new ring of stone walls 4 blocks out, with lookout posts along every
-      other top block, a rabbit gap in each side and steps up inside two corners. It costs block
+      other top block, no gap in it and steps up inside two corners. It costs block
       budget, and shows the room it makes before you build it. Expanding again builds the next ring
       out, until the warren reaches the edge of the building area or 120 rabbits.
     - **Repair everything**: mends the most worn blocks first, and the core.

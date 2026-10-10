@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expand, expansion } from '../../../src/sim/defense/advisor';
+import { expand } from '../../../src/sim/defense/advisor';
 import { CORE_HP } from '../../../src/sim/defense/base';
 import { BREED_PACE } from '../../../src/sim/defense/defense';
 import { MAX_ROOM, MIN_ROOM, coreState, planStats, roomFor, starterPlan, type WarrenPlan } from '../../../src/sim/defense/design';
@@ -39,7 +39,7 @@ describe('a warren design', () => {
     const stats = planStats(starterPlan(), 700);
     expect(stats.core).toBe('ok');
     expect(stats.posts).toBe(4);
-    expect(stats.room).toBe(41);
+    expect(stats.room).toBe(40);
     expect(stats.problem).toBeNull();
   });
 
@@ -86,22 +86,6 @@ describe('growing the warren', () => {
     expect(d.room).toBeGreaterThan(room + 20);
     expect(d.base.posts().length).toBeGreaterThan(posts + 10);
     expect(e.population.capOf('prey')).toBe(d.room);
-  });
-
-  it('leaves a 1-high rabbit gap in the middle of each side, like the starter warren', () => {
-    const e = Ecosystem.create(512, 21, { defense: {} });
-    const d = e.defense!;
-    const f = d.base.footprint()!;
-    const ring = expansion(d)!;
-    const at = (x: number, y: number, z: number) => ring.some((b) => b.x === x && b.y === y && b.z === z);
-    const [x0, z0, x1, z1] = [f.x0 - 4, f.z0 - 4, f.x1 + 4, f.z1 + 4];
-    const mx = Math.floor((x0 + x1) / 2);
-    const mz = Math.floor((z0 + z1) / 2);
-    for (const [x, z] of [[mx, z0], [mx, z1], [x0, mz], [x1, mz]]) {
-      expect(at(x, 0, z)).toBe(false);
-      expect(at(x, 1, z)).toBe(true);
-    }
-    expect(at(mx + 1, 0, z0)).toBe(true);
   });
 
   it('room only changes when the player changes the walls, not when predators break them', () => {

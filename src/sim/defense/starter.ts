@@ -41,7 +41,7 @@ export function createBase(site: { x: number; z: number }): DefenseBase {
 
 /**
  * Builds the starter warren around `site`: the core in the middle (2×2, 2 high), cobblestone walls
- * 3 blocks high that wolves can't leap, a 1-high rabbit gap in the middle of each side, wooden steps
+ * 3 blocks high that wolves can't leap and no gap anywhere (rabbits in a warren need nothing outside), wooden steps
  * up to the wall top inside two corners, and a lookout post on each corner for defenders to stand on.
  */
 export function buildStarterWarren(base: DefenseBase, site: { x: number; z: number }): void {
@@ -60,13 +60,6 @@ export function buildStarterWarren(base: DefenseBase, site: { x: number; z: numb
       base.set(x1, y, z, 'cobblestone');
     }
   }
-  // Rabbit gaps: open at ground level only, so the wall top stays a walkway.
-  for (const [x, z] of [
-    [site.x, z0],
-    [site.x, z1],
-    [x0, site.z],
-    [x1, site.z],
-  ]) base.set(x, 0, z, null);
   // Steps up to the wall top, inside the north-west and south-east corners.
   base.set(x0 + 3, 0, z0 + 1, 'planks');
   base.set(x0 + 2, 0, z0 + 1, 'planks');
